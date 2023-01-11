@@ -1,0 +1,11 @@
+:PROPERTIES:
+:TABLE_EXPORT_FILE: LR_hyperparameters_table.csv
+:TABLE_EXPORT_FORMAT: orgtbl-to-csv
+:END:
+| Hyperparameter    | TYR        | HYP        | EYE        | STR     | NEF     |
+|-------------------+------------+------------+------------+---------+---------|
+| C                 | 0.01       | 4.64       | 0.01       | 0.22    | 100     |
+| class_weight      | 'balanced' | 'balanced' | 'balanced' | None    | None    |
+| penalty           | 'none'     | 'l2'       | 'l2'       | 'l2'    | 'l2'    |
+| solver            | 'lbfgs'    | 'lbfgs'    | 'lbfgs'    | 'lbfgs' | 'lbfgs' |
+| sampling_strategy | 0.30       | 0.10       | 0.50       | 0.50    | 0.50    |

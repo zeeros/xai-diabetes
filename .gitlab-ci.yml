@@ -1,0 +1,201 @@
+variables:
+  SKIP_IMAGES_BUILD: "true"
+  SKIP_EXPERIMENTS: "true"
+  COMPLICATIONS: NEF TYR HYP EYE STR
+  MODELS: HGBC+RUS RF LR
+  MODELS_XAI: HGBC+RUS RF
+
+.build:
+  rules:
+    - if: $SKIP_IMAGES_BUILD == "true"
+      when: never
+      if: $SKIP_IMAGES_BUILD == "false"
+      when: always
+  image: docker:20.10.10
+  services:
+    - docker:20.10.10-dind
+  variables:
+    TAG: "$CI_REGISTRY_IMAGE/$IMAGE_NAME"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - cd $CONTEXT
+    - docker pull $TAG:latest || true
+    - docker build --cache-from $TAG:latest --tag $TAG:$CI_COMMIT_REF_NAME --tag $TAG:latest .
+    - docker push $TAG:$CI_COMMIT_REF_NAME
+    - docker push $TAG:latest
+
+.1h_artifacts:
+  artifacts:
+    paths:
+     - ./artifacts/
+    expire_in: 1h
+
+.experiment_rule:
+  extends: [.1h_artifacts]
+  rules:
+    - if: $SKIP_EXPERIMENTS == "false"
+
+build:emacs:
+  extends: .build
+  variables:
+    IMAGE_NAME: emacs
+    CONTEXT: ./emacs
+
+tangling:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+      when: manual
+  image: $CI_REGISTRY_IMAGE/emacs:latest
+  script:
+    - |
+      emacs --batch \
+      -eval "(require 'org)" \
+      -eval '(setq python-indent-guess-indent-offset-verbose nil)' \
+      -eval '(setq org-src-preserve-indentation t)' \
+      -eval '(org-babel-tangle-file "xai_experiments.org")'
+      tables=($(ls ./data/*_table.org))
+      for entry in "${tables[@]}";do
+          emacs --batch $(readlink -f ${entry}) --eval '(org-table-map-tables (quote org-table-export))';done
+  needs:
+    - job: build:emacs
+      optional: true
+  artifacts:
+    untracked: true
+
+build:performance_evaluation:
+  extends: .build
+  variables:
+    IMAGE_NAME: performance_evaluation
+    CONTEXT: ./performance_evaluation
+  needs: [tangling]
+
+performance_metrics:
+  extends: .experiment_rule
+  image: $CI_REGISTRY_IMAGE/performance_evaluation:latest
+  script: chmod +x ./performance_metrics.sh && ./performance_metrics.sh
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+  parallel:
+    matrix:
+      - MODEL: [HGBC+RUS, RF, LR]
+
+confusion_matrices:
+  extends: .experiment_rule
+  image: $CI_REGISTRY_IMAGE/performance_evaluation:latest
+  script: chmod +x ./confusion_matrices.sh && ./confusion_matrices.sh
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+
+confusion_matrices_roc:
+  extends: .experiment_rule
+  variables:
+    COMPLICATION: NEF
+  image: $CI_REGISTRY_IMAGE/performance_evaluation:latest
+  script: chmod +x ./confusion_matrices_roc.sh && ./confusion_matrices_roc.sh
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+
+build:global_explanations:
+  extends: [.build]
+  variables:
+    IMAGE_NAME: global_explanations
+    CONTEXT: ./global_explanations
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+
+global_explanations:
+  extends: [.experiment_rule]
+  image: $CI_REGISTRY_IMAGE/global_explanations:latest
+  script: chmod +x ./global_explanations.sh && ./global_explanations.sh
+  needs:
+    - job: tangling
+    - job: build:global_explanations
+      optional: true
+  parallel:
+    matrix:
+      - MODEL: [HGBC+RUS, RF]
+
+results:
+  extends: .experiment_rule
+  needs: [
+    "tangling",
+    "performance_metrics",
+    "confusion_matrices",
+    "confusion_matrices_roc",
+    "global_explanations",
+  ]
+  script: echo "Collecting results..."
+  artifacts:
+    paths:
+    - artifacts
+    expire_in: 3 mos
+
+build:results_fetching:
+  extends: [.build]
+  variables:
+    IMAGE_NAME: results_fetching
+    CONTEXT: ./results_fetching
+  needs: [tangling]
+
+results_fetching:
+  extends: [.1h_artifacts]
+  rules:
+    - if: $SKIP_EXPERIMENTS == "true"
+  image: $CI_REGISTRY_IMAGE/results_fetching:latest
+  needs:
+    - job: tangling
+    - job: build:results_fetching
+      optional: true
+  script: chmod +x ./results_fetching.sh && ./results_fetching.sh
+
+build:publishing:
+  extends: .build
+  variables:
+    IMAGE_NAME: publishing
+    CONTEXT: ./publishing
+  needs:
+    - job: tangling
+    - job: build:emacs
+      optional: true
+
+publishing:
+  extends: .1h_artifacts
+  image: $CI_REGISTRY_IMAGE/publishing:latest
+  needs:
+    - job: tangling
+    - job: results
+      optional: true
+    - job: results_fetching
+      optional: true
+    - job: build:publishing
+      optional: true
+  script:
+    - |
+      chmod +x ./performance_metrics_content.sh && ./performance_metrics_content.sh || exit 1
+      chmod +x ./feature_importance_content.sh && ./feature_importance_content.sh || exit 1
+      chmod +x ./publishing.sh && ./publishing.sh || exit 1
+  artifacts:
+    paths:
+    - artifacts
+    expire_in: 3 mos
+
+pages:
+  needs: [publishing]
+  script:
+    - |
+      mkdir -p ./public && mv ./artifacts/xai_experiments.html ./public/index.html
+      mv ./artifacts/thesis.pdf ./artifacts/slides.pdf ./public
+  artifacts:
+    paths:
+    - public

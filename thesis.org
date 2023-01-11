@@ -1,0 +1,1069 @@
+#+title: Thesis
+#+OPTIONS: author:nil date:nil title:nil
+#+SETUPFILE: template/latex_setup.org
+#+STARTUP: shrink
+
+# Frontispiece
+#+INCLUDE: template/frontispiece.tex
+#+LATEX: \afterpage{\blankpage}
+
+# Dedication
+#+LATEX: \newpage
+#+LATEX: \thispagestyle{empty}
+/To Alessandra and Giovanna. You are my light./
+#+LATEX: \afterpage{\blankpage}
+
+# ToC
+#+LATEX: \newpage
+#+LATEX: \thispagestyle{empty}
+#+OPTIONS: toc:nil
+#+TOC: headlines 3
+#+LATEX: \thispagestyle{empty}
+
+#+LATEX: \newpage
+#+LATEX: \setcounter{page}{0}
+#+LATEX: \thispagestyle{empty}
+
+#+begin_abstract
+Diabetes is a chronic condition that affects millions of people around the world.
+If not properly managed, it can lead to a range of complications, such as heart disease, kidney failure, nerve damage, and blindness.
+An early stage diagnose of such complications is a key factor for a successful treatment.
+In an effort to improve the treatment of diabetic patients, we developed a set of machine learning models to predict five different diabetes-related complications, namely nephritis, nephrotic syndrome and nephrosis, diseases of the eye and adnexa, essential hypertension, ischemic stroke and disorders of the thyroid.
+This involved the use of a real-world patients dataset collected over 20 years, with data of more than 6,500 patients and more than 17,000 blood test results.
+This novel approach is much less expensive and time-consuming than traditional diagnostic methods, which often require multiple tests and specialized equipment.
+
+In this study, we sought to better understand how these predictive models work.
+Explainable Machine Learning can provide valuable insights into the behavior of machine learning models and help us further validate their effectiveness.
+By improving our understanding of these models we can better apply them for the diagnosis and treatment of diabetes.
+
+First, we selected the best-suited models through a performance evaluation process.
+These models were then subjected to a series of explainability methods.
+To evaluate the feature importance of the models, we relied on a combination of these methods: univariate statistical tests (ANOVA F-value and Mutual Information), decision trees embedded scores, features permutation and SHAP.
+The feature effects were evaluated with SHAP summary plots, SHAP dependence plots and ALE plots.
+A primary objective of our research was also to guarantee the clarity and reproducibility of our experiments.
+To this end, we used a combination of literate programming (with Org-mode), containerization (with Docker), and continuous development methods (with GitLab CI/CD) to achieve this goal and maintain a clear and organized approach throughout the study.
+
+Our research has shown that basophils, age, creatinine, MCHC, and total cholesterol are the most salient features across all complications, but their significance varies greatly among the complications.
+For the most easily identifiable complication (nephritis, nephrotic syndrome, and nephrosis), the most important features are hemoglobin, eosinophils, basophils, platelets, glycemia and hematocrit.
+While the effect of some of these features is well understood, others are less clear and will require input from domain experts.
+With these findings, we are now ready to work with medical experts to validate our models and evaluate their effectiveness, possibly in real-world scenarios.
+#+end_abstract
+
+#+LATEX: \afterpage{\blankpage}
+
+* Introduction
+
+Artificial intelligence (AI) and Machine Learning (ML) are being increasingly used in a wide range of domains in order to develop both automated and semi-automated systems.
+This is primarily due to the recent and significant developments in the field of AI and ML, which have made it possible to create sophisticated algorithms that can perform complex tasks with a high degree of accuracy.
+However, despite the many benefits that these algorithms can provide, their adoption has been slow in certain critical domains, such as healthcare, defense, finance, law, and transportation.
+A major obstacle to the adoption of AI/ML algorithms in these domains is the lack of confidence and acceptance by the end users of such systems, which relates to transparency, interpretability, ethics, fairness, algorithmic biases, and privacy [cite:@saukkonen2021human].
+One of the main reasons for this lack of confidence is the fact that many AI/ML algorithms tend to behave like a /black-box/, making it difficult for users to understand how they arrive at their decisions.
+This lack of transparency can be particularly problematic in critical domains, where the consequences of a wrong decision can be severe.
+For example, in the healthcare industry, a misdiagnosis by an AI/ML algorithm could have serious implications for the patient's health.
+Similarly, in the defense sector, a mistake by an AI/ML system could have serious consequences for national security.
+To address this issue, it is important for developers of AI/ML algorithms to ensure that their systems are transparent and explainable.
+
+** Explainable Machine Learning
+
+The terms Explainable AI (XAI), Explainable Machine Learning (XML), Interpretable AI or Interpretable Machine Learning refer to any AI which aims to make the inner workings of its algorithms more comprehensible to humans [cite:@phillipsFourPrinciplesExplainable2021].
+A dramatic increase in publications with the keyword “explainable artificial intelligence” followed some impactful events in the field of AI [cite:@islamSystematicReviewExplainable2022]: in 2017 the Defense Advanced Research Projects Agency (DARPA) funds the “Explainable AI (XAI) Program” and the Chinese government releases the “The Development Plan for New Generation of Artificial Intelligence”, in 2018 the European Union grants the “Right to Explanation” in the General Data Protection Regulation (GDPR).
+Also recent years have seen significant advances in best practices for AI-based clinical applications, with The Lancet Commission report [cite:@kickbuschLancetFinancialTimes2021] and the World Health Organization (WHO) report [cite:@EthicsGovernanceArtificial] being few examples of the major efforts made in providing guidance on how to develop and deploy AI in healthcare in an ethical and responsible manner.
+The healthcare and medical sectors are leading the way in the field of explainable AI [cite:@islamSystematicReviewExplainable2022; @abdullahReviewInterpretableML2021], where the technology is used to assist in decision-making, predictions, risk management, and policy making [cite:@yuArtificialIntelligenceHealthcare2018].
+AI systems have been designed to outperform humans experts in many ways, particularly when it comes to analyzing large amounts of medical data and identifying trends and patterns that may not be obvious to the human eye.
+
+Various criteria can be used to group interpretability methods into different classes.
+Here we briefly list some of the common categories identified in the field following the taxonomies devised in [cite:@abdullahReviewInterpretableML2021; @islamSystematicReviewExplainable2022; @schwalbeComprehensiveTaxonomyExplainable2022].
+We can discriminate an interpretability method depending on its
+- Stage :: /Ante-hoc/ methods provide intrinsically interpretable (/white-box/) models by restricting the ML complexity. /Post-hoc/ methods are run after the ML model is trained and can be used on either black-box or white-box models.
+- Model support :: /Model-specific/ methods are restrained to a set of models. /Model-agnostic/ methods can be applied to any trained model (post-hoc) but are unaware of any internal mechanism of the model.
+- Explanation scope :: /Local scope/ methods target single prediction instances. /Global scope/ methods are used to explain the general behaviour of the model.
+- Outcome :: A /feature summary/ in the form of statistics and/or visualizations, otherwise an /intrinsically interpretable/ model that approximates the original black-box model.
+
+** Diabetes
+
+Diabetes, also known as /diabetes mellitus/, is a long-term health condition that affects how the body processes blood sugar, or glucose.
+Glucose is a crucial source of energy for the cells in our bodies, and it must be carefully regulated to maintain proper functioning.
+In individuals with diabetes, the body either does not produce enough insulin or is unable to effectively use the insulin it does produce [cite:@albertiDefinitionDiagnosisClassification1998].
+Insulin is a hormone that helps regulate blood sugar levels.
+When blood sugar levels are not properly controlled, high levels of sugar can build up in the blood, potentially leading to a variety of complications.
+
+Figure [[fig:diabetes]] briefly summarize how diabetes can be classified.
+In particular, we can distinguish diabetes in type 1, an autoimmune disease, and type 2, a metabolic disorder.
+In diabetes type 1 the body's immune system attacks and destroys the pancreas cells responsible for the production of insulin, preventing them to produce enough insulin to regulate blood sugar levels.
+Type 1 diabetes cannot be prevented and it is typically diagnosed in childhood or adolescence.
+In diabetes type 2 the body is affected by insulin resistance: the body produces insulin, but is unable to use it in an effective way.
+Type 2 diabetes is often diagnosed in adults and is typically associated with obesity and a sedentary lifestyle.
+
+#+NAME: fig:diabetes
+#+CAPTION: Diagnosis and classification of diabetes mellitus [cite:@americandiabetesassociationDiagnosisClassificationDiabetes2013]
+[[./diabetes.jpg]]
+
+Diabetes is a serious chronic disease that can lead to a range of complications if left untreated [cite:@longComorbiditiesDiabetesHypertension2011; @kongDiabetesItsComorbidities2013].
+High blood sugar levels can cause fluid to build up in the lens of the eye, leading to a condition called /diabetic retinopathy/.
+This can damage the blood vessels in the retina, leading to swelling and bleeding. Over time, this can lead to vision loss and even blindness.
+The kidneys play a vital role in filtering waste products from the blood, but high blood sugar levels can damage the tiny blood vessels in the kidneys, leading to a condition called /diabetic nephropathy/.
+This can cause the kidneys to lose their ability to function properly, leading to kidney failure and the need for dialysis or a kidney transplant.
+Diabetes can also cause damage to the nerves, a condition called /diabetic neuropathy/.
+High blood sugar levels can damage the tiny blood vessels that supply blood to the nerves, leading to a loss of sensation in the feet and hands.
+This can increase the risk of foot ulcers and infections, which can be difficult to treat and may lead to amputation in severe cases.
+Diabetes can cause damage to the blood vessels, leading to an increased risk of heart disease and stroke.
+High blood sugar levels can cause the walls of the blood vessels to become stiff and narrowed, making it difficult for blood to flow freely.
+This can increase the risk of heart attack and stroke, which can be serious and even life-threatening.
+
+The impact that diabetes has worldwide is massive.
+It is a global health problem that affects millions of people around the world and is a leading cause of death and disability.
+In 2019, diabetes and kidney disease due to diabetes caused an estimated 2 million deaths [cite:@WHODiabetesFact], with a 3% mortality increase between 2000 and 2019.
+The socio-economic implications of diabetes are far-reaching and can be devastating for individuals, families, and communities.
+The high cost of treating diabetes puts a strain on health care systems, which can lead to increased health care costs for everyone. This can be particularly problematic in low- and middle-income countries, where access to health care is often limited and many individuals cannot afford the cost of treating their diabetes.
+Over the past 2 decades, China has experienced a rapid increase in obesity, with a projected overweight-obesity prevalence of 65.3% by 2030 [cite:@wangPrevalenceTreatmentDiabetes2021].
+
+** Contributions
+
+To the best of our knowledge, this is the first study investigating the effect of blood-based biomarkers in predicting diabetes-related complications through machine learning methods.
+
+In particular, the use of a small set of biological markers identifiable with routine blood tests is a novel approach in the context of diabetes diagnosis.
+Furthermore, we offer an in-depth comparison of several explainable AI methods and compare their differences.
+
+The results we obtained are surprising and may lead to new clinical research opportunities in the treatment and management of diabetes.
+  
+* Literature review
+** Explainability methods
+
+In recent years, the widespread adoption of machine learning models has fueled the development of XAI methodologies, leading to a considerable amount of methods and tools.
+However, the choice of which method is the most suitable for a given case remains nontrivial, and a variety of factors must be taken into account.
+For example, the format of the data used by the model is a critical factor: broadly speaking, we might deal with either text, tabular data or images, and a given method may or may not be compatible with such format.
+In addition, the format of the resulting explanation plays a key role in terms of understanding the behavior of the model.
+The trade-off between the amount of information conveyed and ease of understanding must take into account the intended audience of the explanation: are we dealing with domain experts or with the general public?
+Finally, it is necessary to consider in advance the pros and cons of a particular method and be prepared to deal with its inevitable shortcomings.
+
+That said, we are going to present here a review of XAI methods and tools.
+A cross-domain systematic literature review of 137 articles in the field of XAI is presented in [cite:@islamSystematicReviewExplainable2022], while [cite:@abdullahReviewInterpretableML2021] reviews the adoption of XAI in the healthcare domain.
+A comprehensive review of the entire ecosystem of XAI is beyond the scope of this work, but rather we are going to focus instead on a range of candidate solutions that is compatible with our case study.
+Our analysis is interested in methodologies that present examples of use in the medical field or healthcare with data that is represented in tabular form.
+The analysis is resumed in Table [[table:explainability_methods]].
+
+#+CAPTION: FI: Feature Importance, PDP: Partial Dependency Plot, ICE: Individual Conditional Expectation, ALE: Accumulated Local Effects, LIME: Local Interpretable Model-agnostic Explanations, SHAP: SHapley Additive exPlanations, DCFI: Drop-column Feature Importance, PFI: Permutation Feature Importance, RBIA: Rainbow Boxes-Inspired Algorithm, MUSE: Model Understanding through Subspace Explanations, CART: Classification And Regression Trees, CGP: Cartesian Genetic Programming, EBM: Explainable Boosting Machine; Ph: Post-hoc, Ah: Ante-hoc; Ag; Model-agnostic, Spec: Model-specific, NN: Neural Network; Gl: Global, Lo: Local; FS: Feature Summary, II: Intrinsically interpretable
+#+NAME: table:explainability_methods
+| Method    | Stage | Model   | Scope  | Result | Related work                                                              |
+|-----------+-------+---------+--------+--------+---------------------------------------------------------------------------|
+| FI        | Ph    | Spec+Ag | Gl     | FS     | [cite:@yanInterpretableMortalityPrediction2020; @pinascoInterpretableMachineLearning2022; @shiExplainableMachineLearning2022; @amritphalePredictors30DayUnplanned2021]  |
+| PDP       | Ph    | Ag      | Gl     | FS     | [cite:@yangWhoDiesCOVID192020; @wuInterpretableMachineLearning2021; @fengIntelligibleModelsHealthCare2021; @naserDerivingMappingFunctions2022] |
+| ICE       | Ph    | Ag      | Lo+Gl  | FS     | [cite:@wuInterpretableMachineLearning2021]                                |
+| ALE       | Ph    | Ag      | Gl     | FS     | [cite:@kennedyDevelopmentEnsembleMachine2021; @wuInterpretableMachineLearning2021] |
+| LIME      | Ph    | Ag      | Lo     | II     | [cite:@palatnikdesousaLocalInterpretableModelAgnostic2019; @duellComparisonExplanationsGiven2021; @shankaranarayanaALIMEAutoencoderBased2019; @visaniOptiLIMEOptimizedLIME2022; @daveExplainableAIMeets2020; @yangWhoDiesCOVID192020; @ribeiroWhyShouldTrust2016] |
+| SHAP      | Ph    | Ag      | Lo, Gl | FS     | [cite:@pinascoInterpretableMachineLearning2022; @huUsingMachineLearning2020; @duellComparisonExplanationsGiven2021; @ohExplainableMachineLearning2021; @zhangInterpretableDeepLearning2021; @daveExplainableAIMeets2020; @athanasiouExplainableXGBoostBased2020; @moreno-sanchezDevelopmentExplainablePrediction2020; @shiExplainableMachineLearning2022; @yangWhoDiesCOVID192020] |
+| Anchors   | Ph    | Ag      | Lo     | II     | [cite:@daveExplainableAIMeets2020; @duellComparisonExplanationsGiven2021] |
+| RBIA      | Ph    | Ag      | Lo     | FS     | [cite:@lamyExplainableDecisionSupport2020; @lamyExplainableArtificialIntelligence2019] |
+| TREPAN    | Ph    | NN      | Gl     | II     | [cite:@yangWhoDiesCOVID192020]                                            |
+| CART      | Ah    | Tree    | Gl     | FS     | [cite:@portoMinimumRelevantFeatures2021]                                  |
+| CGP       | Ah    | Tree    | Gl     | FS     | [cite:@senatoreAutomaticDiagnosisNeurodegenerative2019]                   |
+| EBM       | Ah    | Tree    | Gl     | II     | [cite:@hegselmannDevelopmentValidationInterpretable2021; @bosschieterUsingInterpretableMachine2022; @saricaExplainableBoostingMachine2021] |
+| <1>       | <1>   | <1>     | <1>    | <1>    | <1>                                                                       |
+
+**** Feature importance methods
+
+The importance of a feature can be measured using different metrics.
+For example, the /split importance/ counts how many times nodes split a feature.
+The /Gini importance/ for a feature is the sum of the Gini index improvements of all nodes using the feature.
+The Gini index tells how “impure” a node is, that is how many features the node uses.
+A node is maximally pure if it contains only one feature.
+In [cite:@pinascoInterpretableMachineLearning2022] key features of a prediction model for COVID-19 screening are identified with Gini impurity feature importance.
+In [cite:@yanInterpretableMortalityPrediction2020] the feature importance computed by XGBoost is used to identify significant biomarkers for COVID-19.
+
+Given a baseline model, the decrease in performance of re-trained models with one missing feature (/drop-column/) or shuffled feature (/permutation/) can also be used as a metrics.
+In [cite:@pinascoInterpretableMachineLearning2022] drop-column importance is used to identify key features of a prediction model for COVID-19 screening with drop column feature importance.
+In [cite:@shiExplainableMachineLearning2022] permutation importance is used to identify key features in predicting the status of postoperative malnutrition in children with congenital heart disease.
+In [cite:@amritphalePredictors30DayUnplanned2021] ELI5 permutation importance is used on a deep neural-network prediction model for screening patients at risk of unplanned readmissions following carotid artery stenting.
+
+**** PDP and ICE
+
+Partial Dependence Plot (PDP) [cite:@hastieElementsStatisticalLearning2009] and Individual Conditional Expectation (ICE) [cite:@goldsteinPeekingBlackBox2014] show how the target response of a prediction model is related to a set of features of interest by marginalizing over of all the other input features (complement features).
+PDP and ICE assume the features of interest are uncorrelated to the complement features, something hardly true when dealing with real life data.
+PDP displays the average effect of features of interest. Let $S$ be the set of features of interest and $C$ the set of complement features, then the partial dependence function for a regression task marginalizes the model output over the random variable $X_C$ to show the relationship between the feature vector $x_s$ and the predicted outcome [cite:@molnarInterpretableMachineLearning2022].
+
+\begin{equation}\notag
+\hat{f}_{S}\left(x_{S}\right)=E_{X_{C}}\left[\hat{f}\left(x_{S}, X_{C}\right)\right]=\int \hat{f}\left(x_{S}, X_{C}\right) d \mathbb{P}\left(X_{C}\right)
+\end{equation}
+
+Monte Carlo method is used to estimate $\hat{f}_S$ with averages of the training dataset of size $n$.
+
+\begin{equation}\notag
+\hat{f}_{S}\left(x_{S}\right)=\frac{1}{n} \sum_{i=1}^{n} \hat{f}\left(x_{S}, x_{C}^{(i)}\right)
+\end{equation}
+
+ICE plots the effect of the feature of interest with one line per sample, providing more insights than PDP when features interactions are complex.
+Due to human perception limits, the number of features is limited to two for PDP and one for ICE.
+
+In [cite:@yangWhoDiesCOVID192020] PDP is used to determine and visualize the marginal effect of four demographic and clinical factors on COVID-19 mortality.
+In [cite:@wuInterpretableMachineLearning2021] PDP and ICE are used to identify significant biomarkers for COVID-19.
+In [cite:@fengIntelligibleModelsHealthCare2021] PDP is used to visualize the average effect of a feature on the predicted probability of unfavorable outcome with ischemic stroke patients.
+In [cite:@naserDerivingMappingFunctions2022] PDP is used to understand the effect of anthropometric measurement on BMI and the interaction between these anthropometric measurements.
+
+**** ALE
+
+Accumulated Local Effects (ALE) [cite:@apleyVisualizingEffectsPredictor2019], like PDP, describes how features influence the prediction of a model on average.
+Numerical feature values are ordered by the Kolmogorov-Smirnov distance, categorical feature values by the relative frequency tables.
+ALE splits the feature space into sufficiently small intervals, then for each interval considers all the instances inside it and changes their feature value while keeping all other features constant.
+To estimate the change in an interval, ALE computes the difference in predictions between the start and the end of the interval.
+The local effects are then accumulated.
+With one numerical feature, the ALE value represents the main effect of the feature at a certain value compared to the average prediction of the data.
+With two numerical features, the second-order effect represents the additional interaction effect of the features after considering the main effects of the features. 
+Localizing the feature values into intervals avoids unlikely or impossible situations. 
+ALE plots isolate the change in prediction caused by a change in a single feature and are a better choice than PDP whenever features are correlated [cite:@molnarInterpretableMachineLearning2022].
+In [cite:@kennedyDevelopmentEnsembleMachine2021] ALE is used to visualize the contribution of high-importance of top continuous predictors for major adverse cardiac events in patients with chest pain.
+In [cite:@wuInterpretableMachineLearning2021] ALE is used to identify significant biomarkers for COVID-19.
+
+**** LIME
+
+Local Interpretable Model-agnostic Explanations (LIME) [cite:@ribeiroWhyShouldTrust2016] is a perturbation-based method used to explain single predictions of black box models [cite:@molnarInterpretableMachineLearning2022].
+Given an instance of interest $x$, perturbed samples are generated from the training dataset and weighted by their distance from $x$.
+A training dataset is created with the perturbed samples and the respective predictions made by the black box model.
+An interpretable model is trained over this dataset.
+The explanation model $g$ for instance $x$ is the model among a set of interpretable models $G$ that minimizes
+- The loss $L$, which measures how close explanation $g$ is to the original model $f$. The proximity measure $\pi_x$ defines the size of the neighborhood around $x$ to be considered for the explanation.
+- The model complexity $\Omega(g)$, set beforehand by the user.
+
+\begin{equation}\notag
+\text{explanation}(x) = \arg \min_{g\in G} L(F,g,\pi_x) + \Omega(g)
+\end{equation}
+
+Variations of the data depend on the type of data.
+With tabular data LIME defines its neighborhood using an exponential smoothing kernel that, given two instances, returns a proximity measure. The size of the kernel plays a crucial role and defining it can be a challenge, especially in high-dimensional feature spaces.
+With text data LIME randomly removes words. The result is a dataset of binary features to describe if the word is included or not.
+With image data LIME segments the image into super-pixels (interconnected pixels with similar colors) and turns them off or on with user defined color.
+
+In [cite:@yangWhoDiesCOVID192020] LIME is used to explain predictions made with four demographic and clinical factors on COVID-19 mortality.
+In [cite:@palatnikdesousaLocalInterpretableModelAgnostic2019] LIME is used to generate explanations for image classification on histology WSI patches for the presence or absence of metastases.
+In [cite:@duellComparisonExplanationsGiven2021] LIME is compared with other SoA XAI in explaining lung-cancer mortality using a EHR dataset.
+In [cite:@daveExplainableAIMeets2020] LIME is used to explain predictions on heart diseases in patients.
+
+**** SHAP
+
+SHAP (SHapley Additive exPlanations) [cite:@lundbergUnifiedApproachInterpreting2017] represents the Shapley value explanation as a linear model, connecting Shapley values to LIME.
+The Shapley value is a method from coalitional game theory used to assign payouts to players depending on their contribution to the total payout.
+The game is a prediction task for a single instance of the dataset.
+The gain is the actual prediction for the instance minus the average prediction for all instances.
+The players are the feature values of the instance collaborating to receive the gain (predict the value).
+The Shapley value of a feature value is its contribution to the payout, computed as the weighted sum over all possible feature value combinations. Computing the exact Shapley value is expensive since the number of possible coalitions grows exponentially with respect to the number of features, so an estimator is usually used instead.
+
+In [cite:@pinascoInterpretableMachineLearning2022] SHAP is used on a prediction model for COVID-19 screening. 
+In [cite:@naserDerivingMappingFunctions2022] SHAP is used to first score all the features over a set of ML algorithms predicting the BMI score from anthropometric measures. Features respecting some given criteria are then used to train a ML ensemble.
+In [cite:@shiExplainableMachineLearning2022] SHAP is used to identify key features in predicting the status of postoperative malnutrition in children with congenital heart disease.
+In [cite:@yangWhoDiesCOVID192020] Tree SHAP (and skater) are used to provide post-hoc, global explanations in COVID-19 mortality predictions.
+In [cite:@duellComparisonExplanationsGiven2021] SHAP is compared with other SoA XAI in explaining lung-cancer mortality using a EHR dataset.
+In [cite:@daveExplainableAIMeets2020] SHAP is used to explain predictions on heart diseases in patients.
+In [cite:@huUsingMachineLearning2020] SHAP is used to explain predictions on mortality of critically ill influenza patients.
+In [cite:@ohExplainableMachineLearning2021] SHAP is used to explain a prediction model for the diagnosis of glaucoma.
+In [cite:@zhangInterpretableDeepLearning2021] SHAP is used to interpret cardiovascular disease diagnosis predictions over ECGs.
+In [cite:@athanasiouExplainableXGBoostBased2020] Tree SHAP is used to explain predictions on cardiovascular disease risk.
+In [cite:@moreno-sanchezDevelopmentExplainablePrediction2020] SHAP is used to explain predictions on heart failure survival.
+
+**** Anchors (or scoped rules)
+
+The anchors (or scoped rules) method uses a set of decision rules (called /anchors/) to explain an instance and some of its neighbours.
+Like LIME, anchors are model agnostic and use a perturbation-based strategy.
+Each anchor is an IF-THEN rule defined by a set of feature predicates.
+The number of predicates defines a cut-off level affecting /coverage/ (how many instances follow the rule) and /precision/.
+The use of feature predicates makes anchors suitable to non-linear decision boundaries.
+The resulting explanation are easy to understand and sub-settable.
+However, explanations can become very complicated when dealing with a high number of attributes or an imbalanced datasets.
+In [cite:@daveExplainableAIMeets2020] anchors are used to explain predictions on heart diseases in patients.
+In [cite:@duellComparisonExplanationsGiven2021] anchors are compared with other SoA XAI in explaining lung-cancer mortality using a EHR dataset.
+
+**** TREPAN
+
+The TREPAN algorithm uses a best-first approach to build decision trees.
+Node expansion is similar to conventional decision trees.
+TREPAN uses a queue to store each node with a subset of training samples that reach the node, a set of query instances (that provides the splitting test of internal nodes and decides the class label leaf nodes) and a set of constraints the conditions required to reach the node (it is used to create the set of query instances of a new node).
+In [cite:@yangWhoDiesCOVID192020] TREPAN is used with skater for COVID-19 mortality predictions.
+
+**** Rainbow box
+
+A /rainbow box/ [cite:@lamyRainbowBoxesNew2017] is a visualization tool for overlapping sets.
+Columns represent the elements to be compared.
+Labeled rectangles represent the sets.
+If an element belongs to a set, its column is covered by the corresponding rectangle.
+Larger boxes are placed at the bottom and two boxes can be side-by-side as long as they do not cover the same columns. A box can have holes, if the elements in the set are not displayed in consecutive columns.
+Rainbow boxes require the resolution of a combinatorial optimization problem: finding the optimal column order that minimizes the number of holes.
+Rainbow Boxes-Inspired Algorithm (RBIA) uses Artificial Feeding Birds (AFB) meta-heuristic to solve the optimization problem.
+In [cite:@lamyExplainableDecisionSupport2020] RBIA is used to explain a preference model for suggesting treatments.
+In [cite:@lamyExplainableArtificialIntelligence2019] RBIA is used to explain a case-based reasoning method for breast cancer classification.
+
+**** CART
+
+Classification and regression trees (CART) is one of the most popular and simple algorithms for tree induction.
+For a given feature, CART finds the cut-off point that minimizes the variance of the outcome (regression tasks) or the Gini index of the class distribution of the outcome (classification tasks).
+The resulting decision tree is an inherently interpretable model.
+In [cite:@portoMinimumRelevantFeatures2021] recursive partitioning and regression trees (RPART), an R implementation of CART, are used to predict cardiovascular diseases.
+
+**** CGP
+
+CGP is a form of Genetic Programming (GP), an heuristic methodology suited for optimization tasks.
+CGP uses a very simple representation of the computational structure in the form of a directed acyclic graph, represented though a two-dimensional grid of nodes. 
+The result is an inherently interpretable classification model.
+In [cite:@bacarditIntersectionEvolutionaryComputation2022] trends and potential benefits in the adoption of Evolutionary Computation (EC) are analyzed in the context of XAI.
+In [cite:@senatoreAutomaticDiagnosisNeurodegenerative2019] the capabilities of CGP to explicitly represent the diagnostic problem are explored.
+
+**** EBM
+
+Explainable Boosting Machine (EBM) [cite:@louAccurateIntelligibleModels2013] is a tree-based, cyclic gradient boosting Generalized Additive Model with automatic interaction detection.
+EBM is a glassbox model, designed to have accuracy comparable to state-of-the-art machine learning methods like Random Forest and Boosted Trees, while being highly intelligibile and explainable [cite:@ExplainableBoostingMachine].
+Although EBMs are often slower to train than other modern algorithms, EBMs are extremely compact and fast at prediction time.
+EBM has been used to predict Alzheimer's disease MRI [cite:@saricaExplainableBoostingMachine2021], maternal and fetal outcomes [cite:@bosschieterUsingInterpretableMachine2022] and ICU readmissions [cite:@hegselmannDevelopmentValidationInterpretable2021].
+** Python libraries
+
+#+CAPTION: Multipurpose libraries for the methods described in Table [[table:explainability_methods]].
+#+NAME: table:multipurpose_libraries
+| Python library                                                               | Methods                  |
+|------------------------------------------------------------------------------+--------------------------|
+| DALEX [cite:@banieckiDalexResponsibleMachine2021]                            | FI, PDP, ALE, LIME, SHAP |
+| InterpretML [cite:@noriInterpretMLUnifiedFramework2019]                      | PDP, LIME, SHAP, EBM     |
+| skater  [cite:@ModelInterpretationSkater]                                    | FI, PDP, LIME, TREPAN    |
+| Alibi [cite:@klaiseAlibiExplainAlgorithms2021]                               | ALE, SHAP, Anchors       |
+| explainerdashboard [cite:@ExplainerdashboardExplainerdashboardDocumentation] | FI, PDP, SHAP            |
+| scikit-learn [cite:@JMLR:v12:pedregosa11a]                                   | FI, PDP, ICE             |
+| Aix360 [cite:@aryaOneExplanationDoes2019]                                    | LIME, SHAP               |
+| imodels [cite:@singhImodelsPythonPackage2021]                                | CART                     |
+
+#+CAPTION: Ad-hoc libraries for the methods described in Table [[table:explainability_methods]].
+#+NAME: table:ad_hoc_libraries
+| Methods | Python libraries                                     |
+|---------+------------------------------------------------------|
+| PDP     | PDPBox [cite:@PDPbox]                                |
+| LIME    | lime [cite:@ribeiroWhyShouldTrust2016]               |
+| SHAP    | shap [cite:@lundbergUnifiedApproachInterpreting2017] |
+| RBIA    | RainbowBox [cite:@lamyRainbowBoxesNew2017]           |
+
+The Python ecosystem provides several libraries in the field of XAI. 
+Table [[table:multipurpose_libraries]] and Table [[table:ad_hoc_libraries]] resume the explainability methods supported by each library.
+DALEX (moDel Agnostic Language for Exploration and eXplanation) [cite:@banieckiDalexResponsibleMachine2021] supports multiple model-agnostic explanation methods.
+DALEX Arena supports an interactive dashboard to visually interact with the available methodologies.
+InterpretML [cite:@noriInterpretMLUnifiedFramework2019] is a very popular XAI library for both interpretable and black-box models.
+The library provides a dashboard to investigate features and specific instances.
+However, the overall number of supported methods is quite limited.
+Alibi [cite:@klaiseAlibiExplainAlgorithms2021] provides several XAI methods for black-box models.
+The library is less friendly than InterpretML, but well documented.
+skater [cite:@ModelInterpretationSkater] by Oracle is a unified framework for models interpretation.
+However, the last release was in 2018, and its development seems to be on hiatus.
+explainerdashboard [cite:@ExplainerdashboardExplainerdashboardDocumentation] that focuses on building an interactive dashboard that supports several type of explainers, with several possible deployment settings.
+Scikit-learn [cite:@JMLR:v12:pedregosa11a], in addition to being one of the most popular Machine Learning libraries, supports some explainability methods.
+Aix360 [cite:@aryaOneExplanationDoes2019] is another general purpose library with several explainers and a very good documentation.
+imodels [cite:@singhImodelsPythonPackage2021] that aims to produce state-of-the-art interpretable models.
+It is worth noting that DALEX, InterpretML, Alibi, explainerdashboard, and Aix360 use the original implementation of SHAP [cite:@lundbergUnifiedApproachInterpreting2017] through wrapper classes.
+LIME [cite:@ribeiroWhyShouldTrust2016] is also wrapped by DALEX, InterpretML and Aix360.
+These wrappers tend to simplify the use of the original implementation at the expense of some options or configurations.
+
+* Methods
+** Dataset
+
+The data is provided by GPI, an Italian company that provides services to Health and Social Care and Public Administration.
+A local health unit, Azienda Sanitaria Locale (ASL), collected the data in two hospitals in Liguria over a 20-year period.
+The resulting dataset consists of over 17,000 blood tests and 6,741 unique patients.
+
+*** Demographic and laboratory features
+
+#+INCLUDE: data/demographic_lab_features_list.org
+
+*** Complications
+
+Diabetes-related complications are represented as one-hot encoded fields.
+Table [[table:complications_features_table]] lists all the available complications and the identifiers assigned to the complications related to diabetes.
+Regarding the diabetes-related complications, we deal with an highly imbalanced dataset.
+The feature creatinine is one of the diagnostic criteria for kidney disease and is strongly correlated to renal complications.
+For this reason we exclude it when targeting the NEF complication.
+
+#+NAME: table:complications_features_table
+#+CAPTION: List of the available complications. Complications of interest are assigned an identifier.
+#+INCLUDE: data/complications_features_table.org :lines "5-"
+
+** Models
+
+Each diabetes-related complication is treated as a label for a binary classification task where, given the features of a blood test sample, the model predicts the presence of the complication.
+The following ML algorithms have been used for the classification task
+- HGBC+RUS :: An histogram-based gradient boosting classifier (HGBC) with a random under sampler (RUS). The estimator is implemented with the hyperparameter values listed in Table [[table:HGBC+RUS_hyperparameters]].
+- RF :: A random forest (RF) classifier. The estimator is implemented with the hyperparameter values listed in Table [[table:RF_hyperparameters]].
+- LR :: A logistic regression (LR) classifier, used as a baseline model. The estimator is implemented with the hyperparameter values listed in Table [[table:LR_hyperparameters]].
+
+Considering five complications of interest and three algorithms, we have a total of fifteen different models.
+Each model is the result of an hyperparameter tuning performed within cross-validation (see Section [[Model development and validation]]) over the values displayed in Tables [[table:HGBC+RUS_hyperparameters]], [[table:RF_hyperparameters]], [[table:LR_hyperparameters]].
+The hyperparameter values are selected over the resulting Matthews Correlation Coefficient (MCC), as MCC is a preferred reference metric whenever dealing with severely imbalanced datasets (see Section [[Dataset]]) [cite:@chiccoAdvantagesMatthewsCorrelation2020].
+
+#+NAME: table:HGBC+RUS_hyperparameters
+#+CAPTION: Results of the hyperparameter grid search for model HGBC+RUS.
+\begin{table}
+\small
+\centering
+\begin{tabular}{crrrrr}
+\makecell{Hyperparameter \\ \left[\text{Grid values}\right]} & TYR & HYP & EYE & STR & NEF\\
+\hline
+\makecell{sampling\_strategy \\ $\left[0.1, 0.25, 0.5, 0.75\right]$} & 0.25 & 0.25 & 0.25 & 0.25 & 0.25\\
+\cline{1-6}
+\makecell{learning\_rate \\ $\left[0.05, 0.1, 0.3, 0.5\right]$} & 0.1 & 0.1 & 0.3 & 0.1 & 0.1\\
+\cline{1-6}
+\makecell{max\_iter \\ $\left[100, 250, 500\right]$} & 500 & 500 & 250 & 500 & 500\\
+\cline{1-6}
+\makecell{max\_depth \\ \left[\text{None}\right]} & None & None & None & None & None\\
+\cline{1-6}
+\makecell{max\_leaf\_nodes \\ $\left[20, 30, 40, 50, 60\right]$} & 60 & 60 & 30 & 60 & 60\\
+\cline{1-6}
+\makecell{validation\_fraction \\ $\left[0.3\right]$} & 0.3 & 0.3 & 0.3 & 0.3 & 0.3\\
+\cline{1-6}
+\makecell{n\_iter\_no\_change \\ $\left[5\right]$} & 5 & 5 & 5 & 5 & 5\\
+\cline{1-6}
+\makecell{tol \\ $\left[0.01\right]$} & 0.01 & 0.01 & 0.01 & 0.01 & 0.01\\
+\end{tabular}
+\end{table}
+
+#+NAME: table:RF_hyperparameters
+#+CAPTION: Results of the hyperparameter grid search for model RF.
+\begin{table}
+\small
+\centering
+\begin{tabular}{crrrrr}
+\makecell{Hyperparameter \\ \left[\text{Grid values}\right]} & TYR & HYP & EYE & STR & NEF\\
+\hline
+\makecell{sampling\_strategy \\ $\left[0.1, 0.3, 0.5\right]$} & 0.5 & 0.1 & 0.3 & 0.3 & 0.5\\
+\cline{1-6}
+\makecell{max\_depth \\ $\left[\text{None}, 3, 7, 10\right]$} & 10 & 10 & None & None & 10\\
+\cline{1-6}
+\makecell{criterion \\ $\left[\text{'gini'}\right]$} & 'gini' & 'gini' & 'gini' & 'gini' & 'gini'\\
+\cline{1-6}
+\makecell{max\_features \\ $\left[\text{'sqrt'}, \text{'log2'}\right]$} & 'sqrt' & 'sqrt' & 'log2' & 'sqrt' & 'sqrt'\\
+\cline{1-6}
+\makecell{n\_estimators \\ $\left[100, 500, 1000\right]$} & 1000 & 1000 & 500 & 500 & 1000\\
+\cline{1-6}
+\makecell{class\_weight \\ $\left[\text{None}, \text{'balanced'}\right]$} & 'balanced' & 'balanced' & None & None & None\\
+\end{tabular}
+\end{table}
+
+#+NAME: table:LR_hyperparameters
+#+CAPTION: Results of the hyperparameter grid search for model LR.
+\begin{table}
+\small
+\centering
+\begin{tabular}{crrrrr}
+\makecell{Hyperparameter \\ \left[\text{Grid values}\right]} & TYR & HYP & EYE & STR & NEF\\
+\hline
+\makecell{sampling\_strategy \\ $\left[0.1, 0.3, 0.5\right]$} & 0.3 & 0.1 & 0.5 & 0.5 & 0.5\\
+\cline{1-6}
+\makecell{class\_weight \\ $\left[\text{None}, \text{'balanced'}\right]$} & 'balanced' & 'balanced' & None & None & None\\
+\cline{1-6}
+\makecell{C \\ $\text{np.logspace(-2, 2, 4)}$} & 0.01 & 4.64 & 0.01 & 0.22 & 100\\
+\cline{1-6}
+\makecell{penalty \\ $\left[\text{'l2'}, \text{'none'}\right]$} & 'none' & 'l2' & 'l2' & 'l2' & 'l2'\\
+\cline{1-6}
+\makecell{solver \\ $\left[\text{'lbfgs'}\right]$} & 'lbfgs' & 'lbfgs' & 'lbfgs' & 'lbfgs' & 'lbfgs'\\
+\end{tabular}
+\end{table}
+
+\clearpage
+
+** Reproducibility
+
+The entire code required to run our project was written in the form of a literate program.
+/Literate programming/ [cite:@knuthLiterateProgramming1984] is a programming paradigm that emphasizes the readability and clarity of a program's source code.
+The source code follows a logical flow and narrative, not unlike a piece of literature, by organizing concepts and collecting ideas that reflect the logic of the program.
+This allows a greater focus on the human reader, rather than simply providing code for the computer to execute.
+By doing so the program becomes more maintainable and easier to modify or extend in the future.
+Literal programming is particularly suited to research and academia, where the focus is often on creating clear, well-structured documents that can be easily understood by others.
+
+/Jupyter notebooks/ [cite:@ProjectJupyter], for example, are a popular tool for literate programming in academia because they allow users to combine text, code, and rich media in a single document.
+This makes it easy to write a clear and concise narrative that explains the purpose and behavior of the code, as well as providing a way to execute and experiment with the code directly in the document.
+/Org-mode/ [cite:@OrgMode] is another open-source tool for organizing, managing, and publishing documents with a fast and effective plain-text system.
+It is part of the /GNU Emacs/ [cite:@GNUEmacsGNU] text editor, and is often used for taking notes, planning projects, and maintaining to-do lists.
+In the context of literature programming, some potential advantages of Org-mode over Jupyter notebooks include:
+- Org-mode allows users to execute code blocks directly within the document, similar to Jupyter notebooks. However, Org-mode supports a wider range of languages, including many programming languages, as well as shell and SQL scripts [cite:@BabelLanguages].
+- Org-mode is a plain text format, whereas Jupyter notebooks are stored in a binary format. This makes Org-mode files more portable and easier to work with in version control systems.
+- Org-mode natively supports export to HTML, PDF, LaTeX (and LaTeX Beamer) and many other formats.
+- Org-mode provides a wide range of features for organizing and structuring text, including support for tables, lists, and links, as well as for creating and managing outlines and hierarchies. This can make it easier to write clear and well-structured documents.
+We decided to use Org-mode not only as a literate programming tool, but also to streamline the writing process for the thesis and presentation slides, making it easier to focus on the content of this work without worrying about formatting.
+
+#+NAME: code:emacs
+#+CAPTION: The Dockerfile for the Docker image used by the tangling job
+#+begin_src text
+FROM ubuntu:22.04	  
+RUN apt-get update \
+    && apt-get install -y software-properties-common \
+    && add-apt-repository ppa:kelleyk/emacs \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y emacs28-nox git
+#+end_src
+
+To have a well-structured, well-documented, and easy to share set of experiments we also relied on /Docker/ [cite:@Docker] containers.
+Docker allows to create a lightweight, self-contained environment.
+This means that we can specify all of the dependencies and settings, and then package them up into a single image that can be easily shared and reproduced on any other machine. 
+Using Docker to run the experiments ensures that they are executed in a consistent and controlled environment, avoiding compatibility issues that could arise from differences in operating systems, hardware, and other factors.
+Finally, experiments can be shared with others in a way that makes it easy for them to reproduce the results.
+This can help to increase the transparency and replicability our research, which are important principles in academia.
+
+#+NAME: fig:pipeline
+#+CAPTION: A pipeline graph that includes the tangling, experiments and publishing jobs.
+[[./pipeline.jpg]]
+
+All the code is hosted on the FBK GitLab platform.
+Using GitLab's CI/CD platform [cite:@GitLabCICD], we were able to adopt continuous development (CD) methodologies for our project.
+We had the chance to verify and test our results progressively with each change during the development process.
+In particular, we defined a pipeline (Figure [[fig:pipeline]]) consisting of various interdependent jobs.
+Below we describe the details of such pipeline.
+
+*** Tangling
+
+The ~tangling~ job (Listing [[code:tangling_yaml]]) extracts the code from our literate program and generates all the standalone source code files required by the project.
+This includes also any ~Dockerfile~ that is required to build the images needed by the experiment and publishing jobs.
+
+#+NAME: code:tangling_yaml
+#+CAPTION: Definition of the build:emacs and tanngling jobs from the pipeline.
+#+begin_src yaml
+tangling:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+      when: manual
+  image: $CI_REGISTRY_IMAGE/emacs:latest
+  script:
+    - |
+      emacs --batch \
+      -eval "(require 'org)" \
+      -eval '(setq python-indent-guess-indent-offset-verbose nil)' \
+      -eval '(setq org-src-preserve-indentation t)' \
+      -eval '(org-babel-tangle-file "xai_experiments.org")'
+      tables=($(ls ./data/*_table.org))
+      for entry in "${tables[@]}";do
+          emacs --batch $(readlink -f ${entry}) --eval '(org-table-map-tables (quote org-table-export))';done
+  needs:
+    - job: build:emacs
+      optional: true
+  artifacts:
+    untracked: true
+#+end_src
+
+\clearpage
+
+*** Image building
+
+During this phase the Docker images are built and stored in the GitLab Container Registry (Listing [[code:building_yaml]]).
+This step can be skipped if all of the required images are already present in the registry, or if the images are unchanged since the last build.
+We defined an image hierarchy that maximize the reuse and minimizes the building times.
+
+#+NAME: code:building_yaml
+#+CAPTION: .build is a template job, extended by other build jobs.
+#+begin_src yaml
+.build:
+  rules:
+    - if: $SKIP_IMAGES_BUILD == "true"
+      when: never
+      if: $SKIP_IMAGES_BUILD == "false"
+      when: always
+  image: docker:20.10.10
+  services:
+    - docker:20.10.10-dind
+  variables:
+    TAG: "$CI_REGISTRY_IMAGE/$IMAGE_NAME"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - cd $CONTEXT
+    - docker pull $TAG:latest || true
+    - docker build --cache-from $TAG:latest --tag $TAG:$CI_COMMIT_REF_NAME --tag $TAG:latest .
+    - docker push $TAG:$CI_COMMIT_REF_NAME
+    - docker push $TAG:latest
+#+end_src
+
+\clearpage
+
+*** Experiments
+
+This phase runs all the performance evaluations, feature importance and feature effects experiments (Listing [[code:experiments_yaml]]).
+For experiments jobs, one instance per model is run and one process per complication (Listing [[code:experiments_sh]]) is run inside each job.
+This minimizes the execution time of the experiments.
+
+#+NAME: code:experiments_yaml
+#+CAPTION: Definition of the build:global_explanations and global_explanations jobs from the pipeline.
+#+begin_src yaml
+build:global_explanations:
+  extends: [.build]
+  variables:
+    IMAGE_NAME: global_explanations
+    CONTEXT: ./global_explanations
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+
+global_explanations:
+  extends: [.experiment_rule]
+  image: $CI_REGISTRY_IMAGE/global_explanations:latest
+  script: chmod +x ./global_explanations.sh && ./global_explanations.sh
+  needs:
+    - job: tangling
+    - job: build:global_explanations
+      optional: true
+  parallel:
+    matrix:
+      - MODEL: [HGBC+RUS, RF]
+#+end_src
+
+#+NAME: code:experiments_sh
+#+CAPTION: Definition of the build:global_explanations and global_explanations jobs from the pipeline.
+#+begin_src sh
+files=(
+    f_test.csv
+    mutual_information.csv
+    $MODEL/SHAP/feature_importance.csv
+    $MODEL/permutation_feature_importance.csv
+    $MODEL/SHAP/summary_plot.pdf
+    $MODEL/SHAP/dependence_plot.pdf
+    $MODEL/ALE.pdf
+    $MODEL/ALE_wide.pdf
+)
+
+if [ $MODEL = 'RF' ];then
+    files+=( $MODEL/embedded_feature_importance.csv )
+fi
+
+for complication in $COMPLICATIONS;do
+    mkdir -p ./artifacts/$complication/$MODEL/SHAP/
+    i=0
+    for file in ${files[@]};do
+        output[$i]=./artifacts/$complication/$file
+        i=$((i+1))
+    done
+    python global_explanations.py \
+      --complication $complication \
+      --model $MODEL \
+      --output ${output[@]} &
+done
+wait
+
+for complication in $COMPLICATIONS;do
+    for file in ${files[@]};do
+        test -f ./artifacts/$complication/$file || exit 1
+    done
+done
+#+end_src
+
+\clearpage
+
+*** Publishing
+
+In the final phase, all the artifacts produced during the experiments phase are collected and used to create an HTML page with the code documentation, this thesis and a set of LaTeX Beamer slides.
+Sometimes different formats may require a different way to display the same data.
+This is why the actual generation of some of the tables and/or images might be delayed to this stage.
+The publishing stage can retrieve artifacts from either the current or the last successful pipeline, so changes to the publishing logic do not require re-running the experiments.
+
+#+begin_src yaml
+publishing:
+  extends: .1h_artifacts
+  image: $CI_REGISTRY_IMAGE/publishing:latest
+  needs:
+    - job: tangling
+    - job: results
+      optional: true
+    - job: results_fetching
+      optional: true
+    - job: build:publishing
+      optional: true
+  script:
+    - |
+      chmod +x ./performance_metrics_content.sh && ./performance_metrics_content.sh || exit 1
+      chmod +x ./feature_importance_content.sh && ./feature_importance_content.sh || exit 1
+      chmod +x ./publishing.sh && ./publishing.sh || exit 1
+  artifacts:
+    paths:
+    - artifacts
+    expire_in: 3 mos
+#+end_src
+
+\clearpage
+
+** Model development and validation
+
+A time series of medical data collected over a long period is inevitably affected by improvements in treatments.
+Consequently, patterns identified in a given time frame may lose relevance as time goes by.
+Failure to account for this effect could lead to overly optimistic estimates of actual model performance [cite:@chenPredictingInpatientClinical2017].
+For this reason we choose a /time-split/ approach: the dataset is divided in a way that ensures all test data is chronologically posterior to the training data.
+Training and test data are partitioned using =sklearn.model_selection.train_test_split= with a ratio of 80% and 20% of the dataset, respectively.
+We opt for a /repeated stratified 5-fold cross-validation/ using =sklearn.model_selection.RepeatedStratifiedKFold=.
+To avoid noisy performance estimates, the cross-validation procedure is repeated 10 times.
+Stratified sampling guarantees the same ratio of target labels of the whole dataset.
+
+Our case study involves the analysis of a set of preexisting predictive models.
+Moreover, we are mostly interested in understanding the general behavior of these models rather than their individual predictions.
+Accordingly, we select from Chapter [[Literature review]] a set of post-hoc, global explainability methods for our experiments: any feature importance compatible with our models, SHAP and ALE.
+All the feature importance and feature effects experiments are run on cross-validation, the performance evaluation experiments are also run on the test set.
+
+* Results
+
+It is important to note that the results in this thesis have significant clinical implications.
+For this reason, the goal of this section is to provide strictly technical interpretation of the outcomes.
+As part of our ongoing efforts, we will present these findings to clinical experts in the area of diabetes.
+
+One of the key results of this research is the discovery that basophils are a major predictor of diabetes-related complications, as presented in Figure [[fig:feature_importance_frequency]], which is a surprising result given their typical involvement in infections and allergies.
+The outcome of this study has the potential to lead to novel research in the field of diabetes management and treatment, especially given the significant sample size of nearly 7,000 patients with a clinical history of more than 20 years.
+
+In this chapter, we will first provide a thorough analysis of the various methods of determining feature importance and their effects on predicting diabetes-related complications.
+After that, we will present the results of the predictive performance of our models, and conclude with a summary of our main findings.
+
+** Feature importance
+
+#+CAPTION: Feature frequency among all feature importance rankings, divided by complication.
+#+NAME: fig:feature_importance_frequency
+[[./artifacts/feature_importance_frequency.pdf]]
+
+\clearpage
+
+Several techniques and approaches can be used to define feature importance.
+Each technique differs on how the importance score is actually computed.
+Table [[table:feature_importance]] shows the top six features identified by each method.
+Below we describe the feature importance methods employed to identify the most significant features for our predictive tasks:
+- Univariate :: Univariate feature importance considers the contribution of each individual feature by ignoring any correlation. Univariate statistical tests are often used for features selection during data preprocessing.
+  - F-value :: Analysis of variance (ANOVA) F-value, estimated with ~sklearn.feature_selection.mutual_info_classif~, is used to determine whether there is a significant linear relationship between random variables. The score corresponds to the ratio between-group-variability and the within-group-variability of a feature.
+  - Mutual Information (MI) :: Estimated with ~sklearn.feature_selection.mutual_info_classif~, uses nonparametric methods based on entropy estimation to capture any kind of dependency.    
+- Embedded :: Decision tree algorithms rely on a metric to decide the splitting points of a tree. Such metric can also be used to provide a feature importance score. The class ~sklearn.ensemble.RandomForestClassifier~, used by model RF, provides the ~feature_importances_~ property. To this day the class ~sklearn.ensemble.HistGradientBoostingClassifier~, used by model HGBC+RUS, provides no native support to feature importance scores.
+- Permutation :: Given a model and a feature, repeated predictions are made after reshuffling the feature's values. The resulting performance loss is a good indicator of how important the feature is. The mean importance score is computed for each feature. The method ~dalex.Explainer.model_parts()~ computes the permutation feature importance using ~1-AUC~ as loss function for models RF and HGBC+RUS.
+- SHAP :: The score of a feature is the average of its absolute Shapley value among the data samples. The Shapley values are computed with ~shap.TreeExplainer.shap_values()~ for models RF and HGBC+RUS.
+
+First, we notice in Table [[table:feature_importance]] how different feature rankings can be among the same complication.
+This confirms the usefulness of considering different feature importance methods for a given task.
+The F-value, while not affected by features correlation, is limited to capturing only linear dependencies and might be oversimplifying our problem.
+Permutation feature importance can give misleading results and over-emphasize correlated features, especially when heavily correlated [cite:@hookerUnrestrictedPermutationForces2021].
+This might explain why the results of permutation feature importance are quite different from any other method.
+On the other hand, the SHAP and embedded feature importance are fairly consistent, valid alternatives to loss-based methods [cite:@molnarPermutationFeatureImportance2022].
+
+#+CAPTION: Comparison of the feature rankings computed by each method.
+#+NAME: table:feature_importance
+#+INCLUDE: ./artifacts/feature_importance.tex
+
+To better summarize the results, we define few /aggregate rankings/ of features.
+An aggregate ranking is the average ranking of a set of feature importance methods.
+Table [[table:feature_importance_avg]] shows the top six features identified by each aggregate ranking.
+Specifically, the aggregate rankings of features are:
+- All :: All methods in Table [[table:feature_importance]].
+- Models :: All methods except the univariate feature importance.
+- HGBC+RUS :: All methods based on model HGBC+RUS.
+- RF :: All methods based on model RF.
+
+#+CAPTION: Average feature rankings over different sets of methods.
+#+NAME: table:feature_importance_avg
+#+INCLUDE: ./artifacts/feature_importance_avg.tex
+
+Figure [[fig:feature_importance_frequency]] summarizes the frequency with which each feature appears in the rankings of all feature importance methods.
+Notice how creatinine is one of the most frequent features, even when it's not contributing to NEF target due to its removal from the model (see Section [[Model development and validation]]).
+
+\clearpage
+
+** Feature effects
+
+In addition to knowing which features are important, we are interested in understanding how this features affect the prediction outcome.
+To do so we rely on the following plots:
+- SHAP summary plot :: Combines SHAP feature importance with feature effects. Features are ordered by their importance. The color of a point represents the feature value, its position along the x-axis depends on the Shapley value.
+- SHAP dependence plot :: Each data instance of a feature is represented by its value, along the x-axis, and its Shapley value, on the y-axis. A SHAP dependence plot tends to be dispersed along the y-axis in case of interactions.
+- ALE plot :: Accumulated Local Effect (ALE) shows how the prediction changes locally when the feature is varied. The x-axis indicates how the feature is distributed and how relevant a region is for interpretation. Compared to the SHAP dependence plots, ALE plots show the average effects.
+
+The feature effects results are divided by complication and model respectively.
+The SHAP plots display the effect of the top six features by SHAP feature importance (see Table [[table:feature_importance]]).
+The ALE plots show the effect of the top six features by the aggregate ranking of features for a given model (see Table [[table:feature_importance_avg]]).
+Overall, SHAP plots and ALE plots results are consistent with one another, highlighting the same trends for the same features.
+Observations over the single complications follow.
+
+*** Nephritis, nephrotic syndrome, and nephrosis (NEF)
+
+Figures [[fig:NEF_HGBC+RUS_SHAP_summary_plot]] and [[fig:NEF_RF_SHAP_summary_plot]] show that low levels of basophils, hemoglobin, and platelets increase the likelihood of the NEF complication.
+The relationship between hemoglobin and the NEF complication is more clearly depicted in Figures [[fig:NEF_HGBC+RUS_SHAP_dependence_plot]] and [[fig:NEF_RF_SHAP_dependence_plot]], with an inflection point at around 12-13 g/100 ml.
+Furthermore, Figures [[fig:NEF_HGBC+RUS_ALE]] and [[fig:NEF_RF_ALE]] illustrate the same trend by showing a noticeable decrease in the contribution of the hemoglobin feature to the likelihood of the NEF complication.
+
+By looking at Figures [[fig:NEF_HGBC+RUS_SHAP_summary_plot]] and [[fig:NEF_RF_SHAP_summary_plot]], we can notice the narrower range of values and the smaller spread of data points in the plots representing hemoglobin, as compared to those representing platelets.
+
+It is clear that the feature hemoglobin has a lower degree of variability compared to the feature platelets, suggesting that the impact of the hemoglobin feature on the NEF complication is more consistent and predictable than that of the platelets feature.
+Despite the higher variance, the feature platelets has a notable inflection point around the value of 200 cells/nL, after which there is a steep decrease in its effect on the NEF complication.
+
+#+CAPTION: SHAP summary plot showing the feature effects for model HGBC+RUS and complication NEF.
+#+NAME: fig:NEF_HGBC+RUS_SHAP_summary_plot
+[[./artifacts/NEF/HGBC+RUS/SHAP/summary_plot.pdf]]
+
+#+CAPTION: SHAP summary plot showing the feature effects for model RF and complication NEF.
+#+NAME: fig:NEF_RF_SHAP_summary_plot
+[[./artifacts/NEF/RF/SHAP/summary_plot.pdf]]
+
+The basophils feature is of particular interest because of its varying impact on the two models under consideration, HGBC+RUS and RF.
+While basophils seem to be a significant predictor for the HGBC+RUS model, its influence on the RF model is minor. 
+Additionally, in Figure [[fig:NEF_HGBC+RUS_SHAP_dependence_plot]] we can notice how the basophils value range is quite small, from 0 to 0.12 cells/nL, and forms distinct clusters due to a low measurement resolution.
+Furthermore, the feature effect variance for this feature is high.
+However, the trend is more clearly shown in Figure [[fig:NEF_HGBC+RUS_ALE]].
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model HGBC+RUS and complication NEF.
+#+NAME: fig:NEF_HGBC+RUS_SHAP_dependence_plot
+[[./artifacts/NEF/HGBC+RUS/SHAP/dependence_plot.pdf]]
+
+\newpage
+
+Conversely, low levels of eosinophils and triglycerides seem to lower the chances of the NEF complication.
+Eosinophil levels below 0.2 cells/nL have a particularly strong negative effect on the development of NEF.
+A similar trend can be observed with triglycerides, with a sharp decrease in the likelihood of NEF complications occurring within the range of 0-150 mg/dL.
+
+Above this range, the effect remains relatively constant.
+The effect of feature age on predictions made by model HGBC+RUS remains unclear since no clear trend is identifiable.
+The results of the RF model suggest that men may be more at risk of developing NEF complication.
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model RF and complication NEF.
+#+NAME: fig:NEF_RF_SHAP_dependence_plot
+[[./artifacts/NEF/RF/SHAP/dependence_plot.pdf]]
+
+#+CAPTION: ALE plots showing the feature effects for model HGBC+RUS and complication NEF.
+#+NAME: fig:NEF_HGBC+RUS_ALE
+[[./artifacts/NEF/HGBC+RUS/ALE.pdf]]
+
+#+CAPTION: ALE plots showing the feature effects for model RF and complication NEF.
+#+NAME: fig:NEF_RF_ALE
+[[./artifacts/NEF/RF/ALE.pdf]]
+
+\clearpage
+
+*** Disorders of the thyroid gland (TYR)
+
+Figures [[fig:TYR_HGBC+RUS_SHAP_summary_plot]] and [[fig:TYR_RF_SHAP_summary_plot]]
+suggest an increased risk for women in developing the TYR complication.
+The most notable and unexpected finding is the effect of age on the likelihood of developing the TYR complication.
+Figures [[fig:TYR_HGBC+RUS_ALE]] and [[fig:TYR_RF_ALE]] show that the chances of developing TYR decrease dramatically at around the age of 75-80.
+Age is a significant factor for both models, HGBC+RUS and RF, and further analysis by a domain expert is necessary to fully understand this outcome.
+
+#+CAPTION: SHAP summary plot showing the feature effects for model HGBC+RUS and complications TYR.
+#+NAME: fig:TYR_HGBC+RUS_SHAP_summary_plot
+[[./artifacts/TYR/HGBC+RUS/SHAP/summary_plot.pdf]]
+
+#+CAPTION: SHAP summary plot showing the feature effects for model RF and complications TYR.
+#+NAME: fig:TYR_RF_SHAP_summary_plot
+[[./artifacts/TYR/RF/SHAP/summary_plot.pdf]]
+
+\newpage
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model HGBC+RUS and complications TYR.
+#+NAME: fig:TYR_HGBC+RUS_SHAP_summary_plot
+[[./artifacts/TYR/HGBC+RUS/SHAP/dependence_plot.pdf]]
+
+The feature basophils is present on both model HGBC+RUS and model RF with a trend similar to the one already identified in Section [[Nephritis, nephrotic syndrome, and nephrosis (NEF)]].
+Finally, the contribution of features glycated hemoglobin, monocytes, platelets, MCH and creatinine remains unclear due to a high variability in their values.
+
+\newpage
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model RF and complications TYR.
+#+NAME: fig:TYR_RF_SHAP_summary_plot
+[[./artifacts/TYR/RF/SHAP/dependence_plot.pdf]]
+
+Inflection points are observed around 50 mmol/mol for glycated hemoglobin, 200 cells/nL count for platelets and 30 pg/cell for MCH.
+Further analysis is necessary to fully understand the role of these factors in the development of complications TYR.
+The variance along the y-axis might be caused by the interaction between different variables.
+
+#+CAPTION: ALE plots showing the feature effects for model HGBC+RUS and complications TYR.
+#+NAME: fig:TYR_HGBC+RUS_ALE
+[[./artifacts/TYR/HGBC+RUS/ALE.pdf]]
+
+#+CAPTION: ALE plots showing the feature effects for model RF and complications TYR.
+#+NAME: fig:TYR_RF_ALE
+[[./artifacts/TYR/RF/ALE.pdf]]
+
+\clearpage
+
+*** Arterial hypertension (HYP)
+
+Regarding the feature effects showed in Figure [[fig:HYP_HGBC+RUS_SHAP_summary_plot]] and Figure [[fig:HYP_RF_SHAP_summary_plot]], low levels of creatinine seem to decrease the chances of the HYP complication.
+In particular, creatinine levels below the 3 mg/dL threshold seem to sensibly lower the risk of contracting HYP.
+
+According to Figure [[fig:HYP_HGBC+RUS_SHAP_summary_plot]] and Figure  [[fig:HYP_HGBC+RUS_SHAP_dependence_plot]] for the HGBC+RUS model, women seem more likely to develop the HYP complication.
+
+#+CAPTION: SHAP summary plot showing the feature effects for model HGBC+RUS and complications HYP.
+#+NAME: fig:HYP_HGBC+RUS_SHAP_summary_plot
+[[./artifacts/HYP/HGBC+RUS/SHAP/summary_plot.pdf]]
+
+#+CAPTION: SHAP summary plot showing the feature effects for model RF and complications HYP.
+#+NAME: fig:HYP_RF_SHAP_summary_plot
+[[./artifacts/HYP/RF/SHAP/summary_plot.pdf]]
+
+\newpage
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model HGBC+RUS and complications HYP.
+#+NAME: fig:HYP_HGBC+RUS_SHAP_dependence_plot
+[[./artifacts/HYP/HGBC+RUS/SHAP/dependence_plot.pdf]]
+
+As mentioned in Section [[Performance evaluation]], the HYP target is the second most difficult to detect by our models.
+This is reflected in the lower performance of both the HGBC+RUS and RF models, which leads to increased variability in many features.
+Such effect is evident not only in the SHAP summary plots and in the SHAP dependence plots, but also on the weak trends highlighted by the ALE plots.
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model RF and complications HYP.
+#+NAME: fig:HYP_RF_SHAP_dependence_plot
+[[./artifacts/HYP/RF/SHAP/dependence_plot.pdf]]
+
+#+CAPTION: ALE plots showing the feature effects for model HGBC+RUS and complications HYP.
+#+NAME: fig:HYP_HGBC+RUS_ALE
+[[./artifacts/HYP/HGBC+RUS/ALE.pdf]]
+
+#+CAPTION: ALE plots showing the feature effects for model RF and complications HYP.
+#+NAME: fig:HYP_RF_ALE
+[[./artifacts/HYP/RF/ALE.pdf]]
+
+\clearpage
+
+*** Diseases of the eye and adnexa (EYE)
+
+Figures [[fig:EYE_HGBC+RUS_SHAP_summary_plot]] and [[fig:EYE_RF_SHAP_summary_plot]] show that an increase in age increases the chances of the EYE complication manifesting, so the trend for the age feature follows our expectations.
+In particular, the interval between 50 and 60 years of age contains an inflection point for such feature.
+
+#+CAPTION: SHAP summary plot showing the feature effects for model HGBC+RUS and complications EYE.
+#+NAME: fig:EYE_RF_SHAP_summary_plot
+[[./artifacts/EYE/HGBC+RUS/SHAP/summary_plot.pdf]]
+
+#+CAPTION: SHAP summary plot showing the feature effects for model RF and complications EYE.
+#+NAME: fig:EYE_RF_SHAP_summary_plot
+[[./artifacts/EYE/RF/SHAP/summary_plot.pdf]]
+
+\newpage
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model HGBC+RUS and complications EYE.
+#+NAME: fig:EYE_HGBC+RUS_SHAP_summary_plot
+[[./artifacts/EYE/HGBC+RUS/SHAP/dependence_plot.pdf]]
+
+The results from models HGBC+RUS and RF suggest that a higher number of platelets may increase the likelihood of the complication NEF, as illustrated in in Figure [[fig:EYE_HGBC+RUS_SHAP_summary_plot]] and Figure [[fig:EYE_RF_SHAP_summary_plot]].
+
+\newpage
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model RF and complications EYE.
+#+NAME: fig:EYE_RF_SHAP_summary_plot
+[[./artifacts/EYE/RF/SHAP/dependence_plot.pdf]]
+
+The EYE target is the most challenging for our models to detect, as discussed in Section [[Performance evaluation]].
+Similarly to HYP, other features remain hard to interpret, likely due to the poor performance of the models on this particular complication.
+
+This may be due to a number of factors, including the complexity of the data and the limited training data available to the models.
+In fact the incidence of EYE in the dataset is the lowest among all complications, as described in Figure [[fig:confusion_matrices]] (Section [[Performance evaluation]]).
+
+#+CAPTION: ALE plots showing the feature effects for model HGBC+RUS and complications EYE.
+#+NAME: fig:EYE_HGBC+RUS_ALE
+[[./artifacts/EYE/HGBC+RUS/ALE.pdf]]
+
+#+CAPTION: ALE plots showing the feature effects for model RF and complications EYE.
+#+NAME: fig:EYE_RF_ALE
+[[./artifacts/EYE/RF/ALE.pdf]]
+
+\clearpage
+
+*** Ischemic diseases of the heart (STR)
+
+According to both the HGBC+RUS and RF models, men appear to be more likely to develop the STR complication.
+As in the case of TYR, the most notable and unexpected finding is the effect of age on the likelihood of developing the STR complication.
+
+#+CAPTION: SHAP summary plot showing the feature effects for model HGBC+RUS and complications STR.
+#+NAME: fig:STR_HGBC+RUS_SHAP_summary_plot
+[[./artifacts/STR/HGBC+RUS/SHAP/summary_plot.pdf]]
+
+#+CAPTION: SHAP summary plot showing the feature effects for model RF and complications STR.
+#+NAME: fig:STR_RF_SHAP_summary_plot
+[[./artifacts/STR/RF/SHAP/summary_plot.pdf]]
+
+\newpage
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model HGBC+RUS and complications STR.
+#+NAME: fig:STR_HGBC+RUS_SHAP_dependence_plot
+[[./artifacts/STR/HGBC+RUS/SHAP/dependence_plot.pdf]]
+
+Additionally, low levels of both total cholesterol and bad cholesterol are also associated with an increased risk of STR, which is quite counterintuitive and unclear result.
+In particular, the total cholesterol shows in both Figure [[fig:STR_HGBC+RUS_SHAP_summary_plot]] and Figure [[fig:STR_RF_SHAP_summary_plot]] a turning point around the interval 150-200 mg/dL, after which the chances for the STR complications decrease.
+
+\newpage
+
+#+CAPTION: SHAP dependence plots showing the feature effects for model RF and complications STR.
+#+NAME: fig:STR_RF_SHAP_dependence_plot
+[[./artifacts/STR/RF/SHAP/dependence_plot.pdf]]
+
+Similarly, in Figure [[fig:STR_HGBC+RUS_SHAP_summary_plot]] and Figure [[fig:STR_RF_SHAP_summary_plot]] the LDL cholesterol shows multiple inflection points around 75 mg/dL and 125 mg/dL, each time decreasing the likelihood of complication STR.
+
+Regarding feature creatinine, values lower than 1 mg/dL seem to affect negatively the prediction for the STR complication in both Figure [[fig:STR_HGBC+RUS_SHAP_dependence_plot]] and Figure [[fig:STR_RF_SHAP_dependence_plot]].
+
+#+CAPTION: ALE plots showing the feature effects for model HGBC+RUS and complications STR.
+#+NAME: fig:STR_HGBC+RUS_ALE
+[[./artifacts/STR/HGBC+RUS/ALE.pdf]]
+
+#+CAPTION: ALE plots showing the feature effects for model RF and complications STR.
+#+NAME: fig:STR_RF_ALE
+[[./artifacts/STR/RF/ALE.pdf]]
+
+\clearpage
+
+** Performance evaluation
+
+Figure [[fig:confusion_matrices]] displays the confusion matrices for models HGBC+RUS, RF, LR on all the diabetes-related complications.
+LR consistently detects the highest number of true positives, at the price of a very high count of false positives.
+Comparatively, HGBC+RUS and RF manage to get a more balanced count of true positives (TP), false negatives (FN), true negatives (TN) and false positives (FP).
+The performance metrics are computed over the test set and cross-validation as described in Section [[Model development and validation]].
+Specifically, the metrics are:
+- Area Under the Curve :: Degree of separability among classes, measured as the area under the Receiver Operating Characteristic (ROC) curve.
+- Matthews correlation coefficient :: $MCC=\frac{(TP * TN)-(FP * FN)}{\sqrt{(TP+F P)(TP+FN)(TN+FP)(TN+FN)}}$
+- Accuracy :: $ACC=\frac{TP+TN}{(TP+TN+FP+FN)}$
+- Positive Predicted Value or Precision :: $PPV=\frac{TP}{TP+FP}$
+- Negative Predicted Value :: $NPV=\frac{TN}{TN+FN}$
+- True Positive Rate or Sensitivity :: $TPR=\frac{TP}{TP+FN}$
+- True Negative Rate or Specificity :: $TNR=\frac{TN}{TN+FP}$
+- F1 score :: $F1=\frac{2 TP}{2 TP+FP+FN}$
+
+All performance metrics values of HGBC+RUS, RF and LR models are displayed in Table [[table:HGBC+RUS_performance_metrics]], Table [[table:RF_performance_metrics]] and Table [[table:LR_performance_metrics]] respectively.
+We opted to exclude the baseline LR model from the experiments in Sections [[Feature importance]] and [[Feature effects]], favoring instead the tree-based models HGBC+RUS and RF, which demonstrated clearly superior performance.
+
+#+NAME: fig:confusion_matrices
+#+CAPTION: Confusion matrices of all models, computed on the test set.
+[[./artifacts/confusion_matrices.pdf]]
+
+#+NAME: table:HGBC+RUS_performance_metrics
+#+CAPTION: Performance metrics for model HGBC+RUS and all complications.
+#+INCLUDE: ./artifacts/HGBC+RUS_performance_metrics.tex
+
+#+NAME: table:RF_performance_metrics
+#+CAPTION: Performance metrics for model RF and all complications.
+#+INCLUDE: ./artifacts/RF_performance_metrics.tex
+
+#+NAME: table:LR_performance_metrics
+#+CAPTION: Performance metrics for model LR and all complications.
+#+INCLUDE: ./artifacts/LR_performance_metrics.tex
+
+\clearpage
+
+** References                                                      :noexport:
+
+- [[https://scikit-learn.org/stable/modules/feature_selection.html#univariate-feature-selection][1.13. Feature selection]]
+- [[https://scikit-learn.org/stable/auto_examples/feature_selection/plot_feature_selection.html#sphx-glr-auto-examples-feature-selection-plot-feature-selection-py][Univariate Feature Selection]]
+- [[https://machinelearningmastery.com/calculate-feature-importance-with-python/][How to Calculate Feature Importance With Python]]
+- [[https://towardsdatascience.com/from-scratch-permutation-feature-importance-for-ml-interpretability-b60f7d5d1fe9][From Scratch: Permutation Feature Importance for ML Interpretability]]
+- [[https://mran.microsoft.com/snapshot/2019-01-10/web/packages/iml/vignettes/intro.html][Introduction to iml: Interpretable Machine Learning in R]]
+- [[https://towardsdatascience.com/6-types-of-feature-importance-any-data-scientist-should-master-1bfd566f21c9][6 Types of “Feature Importance” Any Data Scientist Should Know]]
+- [[https://towardsdatascience.com/stop-permuting-features-c1412e31b63f][Stop Permuting Features]]
+- [[https://pub.towardsai.net/model-explainability-shap-vs-lime-vs-permutation-feature-importance-98484efba066][Model Explainability - SHAP vs. LIME vs. Permutation Feature Importance]]
+
+* Conclusion
+
+In our analysis of various predictive models for diabetes-related complications, we applied multiple interpretability methods to gain insight into which features may be most crucial in making accurate predictions.
+We found that among all the models we studied, the basophils count was a consistently salient feature, along with several others such as age, creatinine, MCHC, total cholesterol and hemoglobin.
+
+However, we also discovered that the influence of these features can vary greatly depending on the complication being predicted.
+We can see how the role of age seems to be very important for targets TYR, HYP, EYE and STR but not for NEF.
+On the other hand, importance of hemoglobin levels is high for NEF and STR, but very low for all the other complications.
+While feature interactions are peculiar to each complication, we must also consider the performance variations among different complications as a measure of reliability.
+For example, the results for models with NEF targets are more reliable than those for EYE targets because the former performs better than the latter.
+
+The interpretation of the feature effects, while clear in several cases, remains difficult for several instances, if not contradictory.
+This underlines limitations of some of the models (e.g. EYE and HYP).
+In general, features interactions are frequently observed in SHAP dependence plots, but sometimes difficult to represent.
+However, trends are usually made more clear when combining SHAP dependence plots and ALE plots.
+Finally, it is important to remind that the feature effects don't represent necessarily causality in real-world scenarios.
+
+Our results can lead to an improvement of the existing models by means of feature selection.
+Improved models, or even completely new ones, can then be easily integrated and evaluated with the same pipeline devised in this study.
+In order to gain a better understanding of the medical validity of our findings, we must wait for a joint study with medical experts.
+
+* Acknowledgements
+
+My sincerest gratitude goes to Prof. Elisa Ricci for her precious guidance.
+I am truly grateful to Dr. Giuseppe Jurman and the team at FBK for providing me with the opportunity to work on such a thrilling and challenging project.
+Special thanks are due to Prof. Venet Osmani and Dr. Marco Chierici for their unwavering support and mentorship.
+I have learned a lot from this experience, and I am deeply appreciative of the expertise, kindness and availability of the entire team.
+
+* Bibliography
+
+#+print_bibliography:

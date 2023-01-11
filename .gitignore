@@ -1,0 +1,31 @@
+*~
+\#*\#
+ltximg
+.ipynb_checkpoints
+__pycache__
+*.ipynb
+output
+artifacts
+conda
+alpine
+latex.Dockerfile
+*.csv
+*.py
+*.sh
+*.pdf
+init.el
+_minted-code
+no.gitlab-ci.yml
+global_explanations/
+_minted-thesis
+dataset.csv
+
+# Dockerfiles
+emacs_latex/
+performance_evaluation/
+publishing/*
+results_fetching/
+
+# Except
+!versions.el
+!publishing/packages/

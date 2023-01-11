@@ -1,0 +1,27 @@
+#+TITLE: Investigating explainable machine learning methods in predicting diabetes related complications
+
+#+begin_quote
+Diabetes is a chronic condition that affects millions of people around the world.
+If not properly managed, it can lead to a range of complications, such as heart disease, kidney failure, nerve damage, and blindness.
+An early stage diagnose of such complications is a key factor for a successful treatment.
+In an effort to improve the treatment of diabetic patients, we developed a set of machine learning models to predict five different diabetes-related complications, namely nephritis, nephrotic syndrome and nephrosis, diseases of the eye and adnexa, essential hypertension, ischemic stroke and disorders of the thyroid.
+This involved the use of a real-world patients dataset collected over 20 years, with data of more than 6,500 patients and more than 17,000 blood test results.
+This novel approach is much less expensive and time-consuming than traditional diagnostic methods, which often require multiple tests and specialized equipment.
+
+In this study, we sought to better understand how these predictive models work.
+Explainable Machine Learning can provide valuable insights into the behavior of machine learning models and help us further validate their effectiveness.
+By improving our understanding of these models we can better apply them for the diagnosis and treatment of diabetes.
+
+First, we selected the best-suited models through a performance evaluation process.
+These models were then subjected to a series of explainability methods.
+To evaluate the feature importance of the models, we relied on a combination of these methods: univariate statistical tests (ANOVA F-value and Mutual Information), decision trees embedded scores, features permutation and SHAP.
+The feature effects were evaluated with SHAP summary plots, SHAP dependence plots and ALE plots.
+A primary objective of our research was also to guarantee the clarity and reproducibility of our experiments.
+To this end, we used a combination of literate programming (with Org-mode), containerization (with Docker), and continuous development methods (with GitLab CI/CD) to achieve this goal and maintain a clear and organized approach throughout the study.
+
+Our research has shown that basophils, age, creatinine, MCHC, and total cholesterol are the most salient features across all complications, but their significance varies greatly among the complications.
+For the most easily identifiable complication (nephritis, nephrotic syndrome, and nephrosis), the most important features are hemoglobin, eosinophils, basophils, platelets, glycemia and hematocrit.
+While the effect of some of these features is well understood, others are less clear and will require input from domain experts.
+With these findings, we are now ready to work with medical experts to validate our models and evaluate their effectiveness, possibly in real-world scenarios.
+#+end_quote
+

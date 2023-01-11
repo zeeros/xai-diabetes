@@ -1,0 +1,12 @@
+:PROPERTIES:
+:TABLE_EXPORT_FILE: RF_hyperparameters_table.csv
+:TABLE_EXPORT_FORMAT: orgtbl-to-csv
+:END:
+| Hyperparameter    | TYR        | HYP        | EYE    | STR    | NEF    |
+|-------------------+------------+------------+--------+--------+--------|
+| class_weight      | 'balanced' | 'balanced' | None   | None   | None   |
+| criterion         | 'gini'     | 'gini'     | 'gini' | 'gini' | 'gini' |
+| max_depth         | 10         | 10         | None   | None   | 10     |
+| max_features      | 'sqrt'     | 'sqrt'     | 'log2' | 'sqrt' | 'sqrt' |
+| n_estimators      | 1000       | 1000       | 500    | 500    | 1000   |
+| sampling_strategy | 0.5        | 0.1        | 0.3    | 0.3    | 0.5    |

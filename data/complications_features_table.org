@@ -1,0 +1,21 @@
+:PROPERTIES:
+:TABLE_EXPORT_FILE: comorbidities_features_table.csv
+:TABLE_EXPORT_FORMAT: orgtbl-to-csv
+:END:
+| Name                                                                            | Identifier |
+|---------------------------------------------------------------------------------+------------|
+| Other diseases of the heart                                                     |            |
+| Other diseases of the digestive system                                          |            |
+| Other metabolic and immune disorders                                            |            |
+| Chronic rheumatic heart disease                                                 |            |
+| Disorders of the thyroid gland                                                  | TYR        |
+| Disorders of other endocrine glands                                             |            |
+| Arterial hypertension                                                           | HYP        |
+| Cerebrovascular diseases                                                        |            |
+| Diseases of the pulmonary circulation                                           |            |
+| Diseases of the eye and adnexa                                                  | EYE        |
+| Diseases of the arteries, arterioles and capillaries                            |            |
+| Diseases of the veins, lymphatic vessels and other circulatory disorders        |            |
+| Ischemic diseases of the heart                                                  | STR        |
+| Nephritis, nephrotic syndrome, and nephrosis                                    | NEF        |
+| People with special diseases that affect their health status                    |            |

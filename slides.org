@@ -1,0 +1,157 @@
+#+TITLE: Investigating Explainable Machine Learning Methods in Predicting Diabetes Related Complications
+#+AUTHOR: Eros Zaupa
+#+OPTIONS: date:nil toc:nil author:t
+#+LATEX_CMD: xelatex
+#+LATEX_HEADER: \usepackage{makecell}
+#+LATEX_HEADER: \usepackage{multirow}
+#+LATEX_HEADER: \usetheme{metropolis}
+#+LATEX_CLASS_OPTIONS: [notes]
+
+* Outline
+
+1. Context
+2. Dataset
+3. Prediction models
+4. Performance evaluation
+5. Explainability methods
+6. Feature importance
+7. Feature effects
+8. Reproducibility
+9. Conclusion
+
+* Diabetes
+
+- Diabetes :: A chronic condition affecting millions of people around the world
+- Screening :: Regular visits to medical specialist and ad-hoc diagnostic tools
+- Problem ::  High cost of diabetes mass-screening
+- Routine blood tests ::  Inexpensive, accessible check-up tool
+- Question :: Can routine blood tests help us identify diabetes complications?
+
+* Dataset
+
+- Collected by Azienda Sanitaria Locale (ASL)
+- 2 hospitals in Liguria, 20-year period
+- 17,000+ blood tests, 6,500+ patients
+- 23 demographic and laboratory features
+- 5 one-hot encoded diabetes-related complications
+  - TYR :: Disorders of the thyroid gland
+  - HYP :: Arterial hypertension
+  - EYE :: Diseases of the eye and adnexa
+  - STR :: Ischemic diseases of the heart
+  - NEF :: Nephritis, nephrotic syndrome, and nephrosis
+- Highly imbalanced
+  
+** Notes                                                           :noexport:
+:PROPERTIES:
+:BEAMER_ENV: note
+:END:
+
+This is a note.
+
+* Prediction models
+
+- HGBC+RUS :: Histogram-based Gradient Boosting Classifier (HGBC) with Random Under Sampler (RUS)
+- RF :: Random Forest classifier
+- LR :: Logistic regression classifier (Baseline model)
+
+* Confusion matrices & ROC curves (NEF)
+
+#+ATTR_LATEX: :height 0.8\textheight
+[[./artifacts/NEF/confusion_matrices_roc.pdf]]
+
+* Performance metrics (NEF)
+
+#+ATTR_LATEX: :height 0.8\textheight
+[[./img/NEF_performance_metrics.png]]
+
+* Performance evaluation - Remarks
+
+Considering all the complications of interest, we have:
+
+- LR
+  - Highest TPR with a very high FPR
+  - Baseline model discarded from the study
+- HGBC+RUS and RF
+  - Overall comparable performance
+  - Lowest performance on EYE and HYP
+
+* Feature importance methods
+
+- Univariate (F-value and Mutual Information) :: Univariate feature importance considers the contribution of each individual feature by ignoring any correlation.
+- Embedded :: Decision tree algorithms rely on a metric to decide the splitting points of a tree. Such metric can also be used to provide a feature importance score.
+- Permutation :: Given a model and a feature, repeated predictions are made after reshuffling the feature's values. The resulting performance loss is a good indicator of how important the feature is.
+- SHAP :: The score of a feature is the average of its absolute Shapley value among the data samples.
+
+* Aggregated rankings of features
+
+- All :: All the mentioned methods
+- Models :: All methods except univariate importance
+- HGBC+RUS :: All methods based on model HGBC+RUS
+- RF :: All methods based on model RF
+
+* Aggregated rankings of features
+
+#+ATTR_LATEX: :height 0.8\textheight
+[[./img/feature_importance_avg.png]]
+
+* Feature frequency among all feature importance rankings
+
+[[./img/artifacts/feature_importance_frequency.pdf]]
+
+* Feature importance - Remarks
+
+Different feature importance methods can provide significantly different rankings, so it is important to consider multiple methods.
+
+- F-value :: While not affected by features correlation, it is limited to capturing only linear dependencies and might be oversimplifying our problem.
+- Permutation :: Can give misleading results and over-emphasize correlated features, especially when heavily correlated.
+- SHAP and embedded :: Are fairly consistent and a valid alternatives to loss-based methods.
+
+* Feature effects methods
+
+- SHAP summary plot :: Combines SHAP feature importance with feature effects. Features are ordered by their importance.
+- SHAP dependence plot :: Each data instance of a feature is represented by its value, along the x-axis, and its Shapley value, on the y-axis. A SHAP dependence plot tends to be dispersed along the y-axis in case of interactions.
+- ALE plot :: Accumulated Local Effect (ALE) shows how the prediction changes locally when the feature is varied. The x-axis indicates how the feature is distributed and how relevant a region is for interpretation. 
+
+* SHAP summary plot - HGBC+RUS (NEF)
+
+[[./artifacts/NEF/HGBC+RUS/SHAP/summary_plot.pdf]]
+
+* SHAP dependence plot - HGBC+RUS (NEF)
+
+#+ATTR_LATEX: :height 0.8\textheight
+[[./artifacts/NEF/HGBC+RUS/SHAP/dependence_plot.pdf]]
+
+* ALE plot - HGBC+RUS (NEF)
+
+#+ATTR_LATEX: :height 0.8\textheight
+[[./artifacts/NEF/HGBC+RUS/ALE_wide.pdf]]
+
+* Feature effects - Remarks
+
+The feature effect methods highlight the limitations of some models, such as EYE and HYP.
+- In some cases, the interpretation of the feature effects is clear, but in many other instances, it remains difficult or even contradictory.
+- The feature effects can vary significantly depending on the complication being predicted. Interactions are specific to the complication, but variations in performance among models also play a significant role.
+
+* Reproducibility
+
+A primary objective of our research was also to guarantee the clarity and reproducibility of our experiments.
+To this end we used a combination of
+- Literate programming :: Org-mode, part of GNU Emacs
+- Containerization :: Docker
+- Continuos development (CD) :: GitLab CI/CD
+
+* Pipeline
+
+[[./img/pipeline.jpg]]
+
+- Tangling :: Extract the code from our literate program and generates all the standalone source code files required by the project.
+- Image building :: Docker images are built and stored in the GitLab Container Registry.
+- Experiments :: Performance evaluations, feature importance and feature effects experiments.
+- Publishing :: Code documentation, thesis and these slides
+
+* Conclusion
+
+- Basophils, age, creatinine, MCHC, total cholesterol and hemoglobin emerge as salient features.
+- Results for complications EYE and HYP are unreliable
+- The next step is to execute a joint study with medical experts to asses the medical validity of our results.
+

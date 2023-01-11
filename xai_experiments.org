@@ -1,0 +1,2005 @@
+#+TITLE: XAI experiments
+#+OPTIONS: toc:4
+
+* =.gitlab-ci.yml=
+** Variables
+:PROPERTIES:
+:header-args: :tangle .gitlab-ci.yml
+:END:
+
+#+begin_src yaml
+variables:
+  SKIP_IMAGES_BUILD: "true"
+  SKIP_EXPERIMENTS: "true"
+  COMPLICATIONS: NEF TYR HYP EYE STR
+  MODELS: HGBC+RUS RF LR
+  MODELS_XAI: HGBC+RUS RF
+#+end_src
+
+** Template jobs
+:PROPERTIES:
+:header-args: :tangle .gitlab-ci.yml
+:END:
+
+#+begin_src yaml
+.build:
+  rules:
+    - if: $SKIP_IMAGES_BUILD == "true"
+      when: never
+      if: $SKIP_IMAGES_BUILD == "false"
+      when: always
+  image: docker:20.10.10
+  services:
+    - docker:20.10.10-dind
+  variables:
+    TAG: "$CI_REGISTRY_IMAGE/$IMAGE_NAME"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - cd $CONTEXT
+    - docker pull $TAG:latest || true
+    - docker build --cache-from $TAG:latest --tag $TAG:$CI_COMMIT_REF_NAME --tag $TAG:latest .
+    - docker push $TAG:$CI_COMMIT_REF_NAME
+    - docker push $TAG:latest
+
+.1h_artifacts:
+  artifacts:
+    paths:
+     - ./artifacts/
+    expire_in: 1h
+
+.experiment_rule:
+  extends: [.1h_artifacts]
+  rules:
+    - if: $SKIP_EXPERIMENTS == "false"
+#+end_src
+
+* Tangling
+** =Dockerfile=
+:PROPERTIES:
+:header-args: :tangle emacs/Dockerfile :mkdirp yes
+:END:
+
+Use Ubuntu 22.04 as a base image.
+Update the packages list.
+Install the command =add-apt-repository= as part of package =software-properties-common=.
+Ubuntu 22.04 still has Emacs 27.1 on its universe repository, so add an [[https://launchpad.net/~kelleyk/+archive/ubuntu/emacs][Ubuntu PPA]] with stable Emacs packages.
+Temporarily disable the configuration prompts while building.
+Install
+- =emacs28-nox= :: A pure tty version of Emacs 28 built without any X Window System support.
+- =git= :: Required to install some Emacs packages.
+
+#+begin_src text
+FROM ubuntu:22.04	  
+RUN apt-get update \
+    && apt-get install -y software-properties-common \
+    && add-apt-repository ppa:kelleyk/emacs \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y emacs28-nox git
+#+end_src
+
+** =.gitlab-ci.yml=
+:PROPERTIES:
+:header-args: :tangle .gitlab-ci.yml
+:END:
+
+#+begin_src yaml
+build:emacs:
+  extends: .build
+  variables:
+    IMAGE_NAME: emacs
+    CONTEXT: ./emacs
+
+tangling:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: always
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+      when: manual
+  image: $CI_REGISTRY_IMAGE/emacs:latest
+  script:
+    - |
+      emacs --batch \
+      -eval "(require 'org)" \
+      -eval '(setq python-indent-guess-indent-offset-verbose nil)' \
+      -eval '(setq org-src-preserve-indentation t)' \
+      -eval '(org-babel-tangle-file "xai_experiments.org")'
+      tables=($(ls ./data/*_table.org))
+      for entry in "${tables[@]}";do
+          emacs --batch $(readlink -f ${entry}) --eval '(org-table-map-tables (quote org-table-export))';done
+  needs:
+    - job: build:emacs
+      optional: true
+  artifacts:
+    untracked: true
+#+end_src
+
+* Experiments
+** Performance evaluation
+*** =Dockerfile=
+:PROPERTIES:
+:header-args: :tangle performance_evaluation/Dockerfile :mkdirp yes
+:END:
+
+Use Miniconda3 version 4.12 as a base image.
+Install the dependencies.
+
+#+begin_src text
+FROM continuumio/miniconda3:4.12.0
+RUN conda install -c conda-forge -y \
+    scikit-learn=1.1.2 \
+    imbalanced-learn=0.9.1 \
+    pandas=1.5.0 \
+    matplotlib=3.5.1 \
+    jinja2==3.1.2
+#+end_src
+
+*** =.gitlab-ci.yml=
+:PROPERTIES:
+:header-args: :tangle .gitlab-ci.yml
+:END:
+
+#+begin_src yaml
+build:performance_evaluation:
+  extends: .build
+  variables:
+    IMAGE_NAME: performance_evaluation
+    CONTEXT: ./performance_evaluation
+  needs: [tangling]
+
+performance_metrics:
+  extends: .experiment_rule
+  image: $CI_REGISTRY_IMAGE/performance_evaluation:latest
+  script: chmod +x ./performance_metrics.sh && ./performance_metrics.sh
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+  parallel:
+    matrix:
+      - MODEL: [HGBC+RUS, RF, LR]
+
+confusion_matrices:
+  extends: .experiment_rule
+  image: $CI_REGISTRY_IMAGE/performance_evaluation:latest
+  script: chmod +x ./confusion_matrices.sh && ./confusion_matrices.sh
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+
+confusion_matrices_roc:
+  extends: .experiment_rule
+  variables:
+    COMPLICATION: NEF
+  image: $CI_REGISTRY_IMAGE/performance_evaluation:latest
+  script: chmod +x ./confusion_matrices_roc.sh && ./confusion_matrices_roc.sh
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+#+end_src
+
+*** =performance_metrics.sh=
+:PROPERTIES:
+:header-args: :tangle performance_metrics.sh
+:END:
+
+#+begin_src sh
+count=0
+for complication in $COMPLICATIONS;do
+    mkdir -p ./artifacts/$complication/$MODEL/
+    csv[$count]=./artifacts/$complication/$MODEL/performance_metrics.csv
+    python performance_metrics.py \
+    --complication $complication \
+    --model $MODEL \
+    --output ${csv[$count]} &
+    count=$((count+1))
+done
+wait
+for complication in $COMPLICATIONS;do
+    test -f ./artifacts/$complication/${MODEL}/performance_metrics.csv || exit 1
+done
+#+end_src
+
+*** =performance_metrics.py=
+:PROPERTIES:
+:header-args: :tangle performance_metrics.py
+:END:
+
+#+begin_src python
+import csv
+
+from sklearn.metrics import make_scorer, precision_score, matthews_corrcoef, recall_score, roc_auc_score, accuracy_score, f1_score
+import scipy.stats as st
+import numpy as np
+from sklearn.model_selection import cross_validate
+
+import utils
+#+end_src
+
+#+begin_src python
+args = utils.cli_parser.parse_args()
+X_train, y_train, X_test, y_test = utils.datasets(args.dataset, args.complication[0])
+#+end_src
+
+The following performance metrics are used:
+- MCC :: Matthews Correlation Coefficient
+- AUC :: Area Under the Curve
+- ACC :: Accuracy
+- PPV :: Positive Predicted Value, or precision
+- NPV :: Negative Predicted Value. The score is equivalent to the precision score with the positive label being inverted.
+- TPR :: True Positive Rate, or recall. The score is equivalent to the specificity score with the positive label being inverted.
+- TNR :: True Negative Rate, or specificity
+- F1 :: F1 measure
+
+#+begin_src python
+cv_scoring = {
+    "MCC" : make_scorer(matthews_corrcoef, greater_is_better = True),
+    "AUC" : 'roc_auc',
+    "ACC" : 'accuracy',
+    "PPV" : 'precision',
+    "NPV" : make_scorer(precision_score, pos_label=0, greater_is_better = True),
+    "TPR" : 'recall',
+    "TNR" : make_scorer(recall_score, pos_label=0, greater_is_better = True),
+    "F1" : 'f1'
+}
+
+performance_metrics = [['Metric'] + list(cv_scoring.keys())]
+#+end_src
+
+Compute the metrics for the current model on the test set.
+
+#+begin_src python
+pipeline = utils.pipeline(
+    args.complication[0],
+    args.model[0],
+    X_train.columns
+)
+y_pred = pipeline.fit(X_train, y_train).predict(X_test)
+
+performance_metrics.append([
+    'Test set',
+    '{:04.3f}'.format(matthews_corrcoef(y_test, y_pred).round(3)),
+    '{:04.3f}'.format(roc_auc_score(y_test, pipeline.predict_proba(X_test)[:, 1]).round(3)),
+    '{:04.3f}'.format(accuracy_score(y_test, y_pred).round(3)),
+    '{:04.3f}'.format(precision_score(y_test, y_pred, average='binary').round(3)),
+    '{:04.3f}'.format(precision_score(y_test, y_pred, average='binary', pos_label=0).round(3)),
+    '{:04.3f}'.format(recall_score(y_test, y_pred, average='binary').round(3)),
+    '{:04.3f}'.format(recall_score(y_test, y_pred, average='binary', pos_label=0).round(3)),
+    '{:04.3f}'.format(f1_score(y_test, y_pred, average='binary').round(3))
+])
+#+end_src
+
+Compute the metrics for the current model on cross-validation.
+
+#+begin_src python
+cv_scores = cross_validate(
+    estimator=pipeline,
+    X=X_train,
+    y=y_train,
+    cv=utils.cv,
+    scoring=cv_scoring,
+    n_jobs=-1
+)
+
+scores = []
+for metric in cv_scoring.keys():
+    metric_scores = cv_scores["test_%s" %metric]
+    metric_mean = np.mean(metric_scores)
+    CI = st.norm.interval(confidence=0.95, loc=metric_mean, scale=st.sem(metric_scores))
+    scores.append("{:04.3f} [{:04.3f}; {:04.3f}]".format(metric_mean.round(3), CI[0].round(3), CI[1].round(3)))
+performance_metrics.append(['CV [95% CI]'] + scores)
+#+end_src
+
+Transpose the list of lists.
+The first row contains is the heading, the remaining rows represent each metric with its test and cross-validation score.
+The list of lists is ready to be written as a CSV file.
+
+#+begin_src python
+performance_metrics = list(map(list, zip(*performance_metrics)))
+with open(args.output[0], mode='w') as file:
+    writer = csv.writer(file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    for row in performance_metrics:
+        writer.writerow(row)
+#+end_src
+
+*** =confusion_matrices.sh=
+:PROPERTIES:
+:header-args: :tangle confusion_matrices.sh
+:END:
+
+#+begin_src sh
+mkdir -p ./artifacts
+python confusion_matrices.py \
+--complication $COMPLICATIONS \
+--model $MODELS \
+--output ./artifacts/confusion_matrices.pdf
+test -f ./artifacts/confusion_matrices.pdf || exit 1
+#+end_src
+
+*** =confusion_matrices.py=
+:PROPERTIES:
+:header-args: :tangle confusion_matrices.py
+:END:
+
+#+begin_src python
+import os
+
+from sklearn.metrics import ConfusionMatrixDisplay, RocCurveDisplay
+import matplotlib.pyplot as plt
+
+import utils
+
+args = utils.cli_parser.parse_args()
+
+complications_number = len(args.complication)
+models_number = len(args.model)
+
+fig = plt.figure(figsize = (1.5 * models_number, 1.5 * complications_number))
+for i in range (complications_number):
+    X_train, y_train, X_test, y_test = utils.datasets(args.dataset, args.complication[i])
+    for j in range(models_number):
+        subplot = plt.subplot2grid(
+            shape=(complications_number, models_number),
+            loc=(i, j),
+        )
+        if i == 0:
+            subplot.set_title(args.model[j])
+        pipeline = utils.pipeline(
+            args.complication[i],
+            args.model[j],
+            X_train.columns
+        )
+        pipeline.fit(X_train, y_train)
+        cm = ConfusionMatrixDisplay.from_estimator(
+            pipeline,
+            X=X_test,
+            y=y_test,
+            cmap=plt.cm.Blues,
+            colorbar=False,
+            ax=subplot
+        )
+        cm.ax_.set_xlabel('Predicted %s' %args.complication[i])
+        cm.ax_.set_ylabel('True %s' %args.complication[i])
+
+plt.rc('font', size = 8)    
+plt.tight_layout()    
+plt.savefig(args.output[0], format='pdf', dpi=320, bbox_inches='tight')
+#+end_src
+
+*** =confusion_matrices_roc.sh=
+:PROPERTIES:
+:header-args: :tangle confusion_matrices_roc.sh
+:END:
+
+#+begin_src sh
+mkdir -p ./artifacts/$COMPLICATION
+python confusion_matrices_roc.py \
+--complication $COMPLICATION \
+--model $MODELS \
+--output ./artifacts/$COMPLICATION/confusion_matrices_roc.pdf
+test -f ./artifacts/$COMPLICATION/confusion_matrices_roc.pdf || exit 1
+#+end_src
+
+*** =confusion_matrices_roc.py=
+:PROPERTIES:
+:header-args: :tangle confusion_matrices_roc.py
+:END:
+
+#+begin_src python
+import os
+import pickle
+
+from sklearn.metrics import ConfusionMatrixDisplay, RocCurveDisplay
+import matplotlib.pyplot as plt
+
+import utils
+
+args = utils.cli_parser.parse_args()
+X_train, y_train, X_test, y_test = utils.datasets(args.dataset, args.complication[0])
+
+models_number = len(args.model)
+fig = plt.figure(figsize = (8, 2.5 * models_number))
+
+subplot = plt.subplot2grid(
+    shape = (models_number * 2, 4),
+    loc = (1, 0),
+    colspan = 3,
+    rowspan = (models_number * 2) - 2,
+    title = "ROC curve"
+)
+
+fig.axes[0].plot([0, 1], [0, 1], linestyle = "--")
+for i in range(models_number):
+    pipeline = utils.pipeline(
+        args.complication[0],
+        args.model[i],
+        X_train.columns
+    )
+    pipeline.fit(X_train, y_train)
+    RocCurveDisplay.from_estimator(
+        pipeline,
+        X = X_test,
+        y = y_test,
+        name = args.model[i],
+        ax = fig.axes[0]
+    )
+    subplot = plt.subplot2grid(
+        shape=(models_number * 2, 4),
+        loc=(i * 2, 3),
+        rowspan=2,
+        title=args.model[i]
+    )
+    ConfusionMatrixDisplay.from_estimator(
+        pipeline,
+        X=X_test,
+        y=y_test,
+        cmap=plt.cm.Blues,
+        colorbar=False,
+        ax=subplot
+    )
+
+plt.rc('font', size = 12)
+plt.tight_layout()
+plt.savefig(args.output[0], format='pdf', dpi=320, bbox_inches='tight')
+#+end_src
+
+** Global explanations
+*** =Dockerfile=
+:PROPERTIES:
+:header-args: :tangle global_explanations/Dockerfile :mkdirp yes
+:END:
+
+#+begin_src text
+FROM gitlab-registry.fbk.eu/vosmani/eros_zaupa/performance_evaluation
+RUN conda install -c conda-forge -y \
+    shap=0.41.0 \
+    dalex=1.5.0 \
+    python-kaleido=0.2.1
+#+end_src
+
+*** =.gitlab-ci.yml=
+:PROPERTIES:
+:header-args: :tangle .gitlab-ci.yml
+:END:
+
+#+begin_src yaml
+build:global_explanations:
+  extends: [.build]
+  variables:
+    IMAGE_NAME: global_explanations
+    CONTEXT: ./global_explanations
+  needs:
+    - job: tangling
+    - job: build:performance_evaluation
+      optional: true
+
+global_explanations:
+  extends: [.experiment_rule]
+  image: $CI_REGISTRY_IMAGE/global_explanations:latest
+  script: chmod +x ./global_explanations.sh && ./global_explanations.sh
+  needs:
+    - job: tangling
+    - job: build:global_explanations
+      optional: true
+  parallel:
+    matrix:
+      - MODEL: [HGBC+RUS, RF]
+#+end_src
+
+*** =global_explanations.sh=
+:PROPERTIES:
+:header-args: :tangle global_explanations.sh
+:END:
+
+#+begin_src sh
+files=(
+    f_test.csv
+    mutual_information.csv
+    $MODEL/SHAP/feature_importance.csv
+    $MODEL/permutation_feature_importance.csv
+    $MODEL/SHAP/summary_plot.pdf
+    $MODEL/SHAP/dependence_plot.pdf
+    $MODEL/ALE.pdf
+    $MODEL/ALE_wide.pdf
+)
+
+if [ $MODEL = 'RF' ];then
+    files+=( $MODEL/embedded_feature_importance.csv )
+fi
+
+for complication in $COMPLICATIONS;do
+    mkdir -p ./artifacts/$complication/$MODEL/SHAP/
+    i=0
+    for file in ${files[@]};do
+        output[$i]=./artifacts/$complication/$file
+        i=$((i+1))
+    done
+    python global_explanations.py \
+      --complication $complication \
+      --model $MODEL \
+      --output ${output[@]} &
+done
+wait
+
+for complication in $COMPLICATIONS;do
+    for file in ${files[@]};do
+        test -f ./artifacts/$complication/$file || exit 1
+    done
+done
+#+end_src
+
+*** =global_explanations.py=
+:PROPERTIES:
+:header-args: :tangle global_explanations.py
+:END:
+
+#+begin_src python
+import csv
+from collections import Counter
+
+import shap
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
+from imblearn.pipeline import Pipeline as imbPipe
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+#+end_src
+
+DALEX throws several =FutureWarning= that can be ignored.
+
+#+begin_src python
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+import dalex
+from dalex.model_explanations import AggregatedProfiles
+#+end_src
+
+Plotly is used by DALEX to render plots.
+As described in this [[https://github.com/plotly/plotly.py/issues/3469][issue]], when saving the [[SHAP dependence plot]] the message =MathJax "loading"= appears in it.
+The module isn't actually used and, as suggested [[https://github.com/plotly/plotly.py/issues/3469#issuecomment-994907721][here]], we can prevent MathJax to be loaded.
+
+#+begin_src python
+import plotly.io as pio
+pio.kaleido.scope.mathjax = None
+#+end_src
+
+#+begin_src python
+import utils
+
+args = utils.cli_parser.parse_args()
+X, y = utils.datasets(args.dataset, args.complication[0])[0:2]
+preprocessor = utils.preprocessor(X.columns).fit(X)
+global_explanations = {
+   f_classif: {'output': args.output[0], 'scores': []},
+   mutual_info_classif: {'output': args.output[1], 'scores': []},
+   'shap_fi': {'output': args.output[2], 'scores': []},
+   'permutation_fi': {'output': args.output[3], 'scores': {column: [] for column in X.columns}},
+   'summary_plot': {'output': args.output[4]},
+   'dependence_plot': {'output': args.output[5]},
+   'ale_plot': {'output': args.output[6]},
+   'ale_plot_wide': {'output': args.output[7]},
+}
+if args.model[0] == 'RF':
+    global_explanations['embedded_fi'] = {'output': args.output[8], 'scores': []}
+pipelines, no_samples_cv = ([], [])
+#+end_src
+
+**** Cross-validation
+
+#+begin_src python
+for train_index, test_index in utils.cv.split(X, y):
+    X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+    y_train, y_test = y[train_index], y[test_index]
+#+end_src
+
+ANOVA F-value and Mutual Information.
+
+#+begin_src python
+    for method in [f_classif, mutual_info_classif]:
+        feature_selection = SelectKBest(score_func=method, k="all")
+        pipeline_fi = imbPipe(
+            steps=[
+                ('preprocessor', preprocessor),
+                ('over', SMOTE(sampling_strategy=0.25, random_state=utils.seed)),
+                ('under', RandomUnderSampler(sampling_strategy=0.75, random_state=utils.seed)),
+                ('feature_selection', feature_selection)
+            ]
+        )
+        pipeline_fi.fit(X_train, y_train)
+        global_explanations[method]['scores'].append(pipeline_fi['feature_selection'].scores_.tolist())
+#+end_src
+
+Fit the model.
+
+#+begin_src python
+    pipeline = utils.pipeline(
+        args.complication[0],
+        args.model[0],
+        X.columns
+    ).fit(X_train, y_train)
+    pipelines.append(pipeline)
+    no_samples_cv.append(len(test_index))
+#+end_src
+
+Compute the SHAP values over the validation set.
+The model =RF= provides a probability for the positive class and a probability for the negative class.
+As described in this [[https://github.com/slundberg/shap/issues/1252][issue]], we can consider just the SHAP values for the positive class.
+For each sample, the values are stored in the =shap_values= list with the sample index in the form =(<sample_index>, [<sample_shap_values>])=.
+
+#+begin_src python
+    explainer = shap.TreeExplainer(pipeline['classifier'])
+    shap_values_test = explainer.shap_values(preprocessor.fit_transform(X_test), approximate=True)
+    if args.model[0] == "RF":
+        shap_values_test = shap_values_test[1]
+    shap_values = [(test_index[i], shap_values_test[i]) for i in range(len(test_index))]
+    global_explanations['shap_fi']['scores'].extend(shap_values)
+#+end_src
+
+Get the feature importance for model =RF=.
+The class =HistGradientBoostingClassifier= doesn't provide any native feature importance measure.
+
+#+begin_src python
+    if args.model[0] == 'RF':
+        global_explanations['embedded_fi']['scores'].append(pipeline["classifier"].feature_importances_)
+#+end_src
+
+Compute the permutation feature importance.
+
+#+begin_src python
+    explainer = dalex.Explainer(pipeline, data=X_test, y=y_test, verbose=False, precalculate=False)
+    model_parts = explainer.model_parts(random_state=utils.seed, B=5, N=500)
+    for column in X.columns:
+        dropout_loss = model_parts.result[model_parts.result["variable"] == column]['dropout_loss'].to_list()[0]
+        global_explanations['permutation_fi']['scores'][column].append(dropout_loss)
+#+end_src
+
+#+begin_src python
+X_cv = X.iloc[[index for index,_ in global_explanations['shap_fi']['scores']]].reset_index(drop=True)
+y_cv = y[[index for index,_ in global_explanations['shap_fi']['scores']]]
+feature_names = np.array(['Sex (F=0;M=1)' if f == 'Sex_M' else f for f in preprocessor.get_feature_names_out()])
+#+end_src
+
+**** Univariate feature scoring
+
+[[https://scikit-learn.org/stable/modules/feature_selection.html#univariate-feature-selection][- 1.13. Feature selection]]
+[[https://scikit-learn.org/stable/auto_examples/feature_selection/plot_feature_selection.html#sphx-glr-auto-examples-feature-selection-plot-feature-selection-py][- Univariate Feature Selection]]
+
+#+begin_src python
+for expl in [global_explanations[f_classif], global_explanations[mutual_info_classif]]:
+    scores = np.mean(expl['scores'], axis=0)
+    idxs = sorted(
+        range(len(scores)),
+        key=lambda k: scores[k],
+        reverse=True
+    )
+    feature_importance = feature_names[idxs]
+    with open(expl['output'], mode='w') as file:
+        writer = csv.writer(file, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        for feature in feature_importance[:args.topfeatures]:
+            writer.writerow(['Sex (F=0;M=1)' if feature == 'Sex_M' else feature])
+#+end_src
+
+**** Decision tree feature importance
+
+#+begin_src python
+if args.model[0] == "RF":
+    embedded_mean = np.mean(global_explanations['embedded_fi']['scores'], axis=0)
+    idxs = sorted(
+        range(len(embedded_mean)),
+        key=lambda k: embedded_mean[k],
+        reverse=True
+    )
+    embedded_feature_importance = feature_names[idxs]
+    with open(global_explanations['embedded_fi']['output'], mode='w') as file:
+        writer = csv.writer(file, quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        for row in embedded_feature_importance[:args.topfeatures]:
+            writer.writerow([row])
+#+end_src
+
+**** Permutation feature importance
+
+#+begin_src python
+permutation_feature_importance = []
+for column in X.columns:
+    permutation_scores = global_explanations['permutation_fi']['scores']
+    permutation_feature_importance.append((column, np.mean(permutation_scores[column])))
+
+permutation_feature_importance.sort(key=lambda a: a[1])
+with open(global_explanations['permutation_fi']['output'], mode='w') as file:
+    writer = csv.writer(file, quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    for row in permutation_feature_importance[:args.topfeatures]:
+        writer.writerow([row[0]])
+#+end_src
+
+**** SHAP feature importance
+
+[[https://machinelearningmastery.com/calculate-feature-importance-with-python/][- How to Calculate Feature Importance With Python]]
+[[https://towardsdatascience.com/from-scratch-permutation-feature-importance-for-ml-interpretability-b60f7d5d1fe9][- From Scratch: Permutation Feature Importance for ML Interpretability]]
+
+#+begin_src python
+shap_scores = global_explanations['shap_fi']['scores']
+shap_mean = np.abs([shap_value for _, shap_value in shap_scores]).mean(axis=0).tolist()
+idxs = sorted(
+    range(len(shap_mean)),
+    key=lambda k: shap_mean[k],
+    reverse=True
+)
+shap_feature_importance = feature_names[idxs][:args.topfeatures]
+with open(global_explanations['shap_fi']['output'], mode='w') as file:
+    writer = csv.writer(file, quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    for row in shap_feature_importance:
+        writer.writerow([row])
+#+end_src
+
+**** SHAP summary plot
+
+#+begin_src python
+X_shap = pd.DataFrame(
+    preprocessor.fit_transform(X_cv),
+    columns=[f.split('(')[0].strip() if f != 'Sex (F=0;M=1)' else f for f in feature_names]
+)
+
+shap_scores = global_explanations['shap_fi']['scores']
+shap.summary_plot(
+    np.array([shap_scores for _, shap_scores in shap_scores]),
+    X_shap,
+    show=False,
+    max_display=args.topfeatures
+)
+plt.savefig(global_explanations['summary_plot']['output'], format='pdf', dpi=320, bbox_inches='tight')
+plt.close()
+#+end_src
+
+**** SHAP dependence plot
+
+#+begin_src python
+columns=['Sex' if column == 'Sex (F=0;M=1)' else column for column in feature_names]
+X_shap = pd.DataFrame(X_cv, columns=columns)
+
+fig = plt.figure(figsize=(7, 7))
+ncols = 2
+nrows = (len(shap_feature_importance) + ncols - 1) // ncols
+for i in range(len(shap_feature_importance)):
+    if i % ncols ==  0:
+        r = i // ncols
+    c = i % ncols
+    subplot = plt.subplot2grid(
+        shape=(nrows, ncols),
+        loc=(r, c)
+    )
+    shap_scores = global_explanations['shap_fi']['scores']
+    shap.dependence_plot(
+        ind=str('Sex' if shap_feature_importance[i] == 'Sex (F=0;M=1)' else shap_feature_importance[i]),
+        shap_values=np.array([shap_scores for _, shap_scores in shap_scores]),
+        features=X_shap,
+        ax=subplot,
+        interaction_index=None,
+        show=False,
+        dot_size=2,
+        alpha=0.05
+    )
+    plt.ylabel("SHAP value")
+plt.tight_layout()
+fig.savefig(global_explanations['dependence_plot']['output'])
+plt.close()
+#+end_src
+
+**** ALE
+
+Compute the =ale_feature_importance= as an average among all feature importance methods of the model.
+
+#+begin_src python
+shap_fi = shap_feature_importance.tolist()
+permutation_fi = [feature for feature, _ in permutation_feature_importance][:args.topfeatures]
+fi = [
+    list(reversed(shap_fi)),
+    list(reversed(permutation_fi)),
+]
+
+if args.model[0] == "RF":
+    embedded_fi = embedded_feature_importance.tolist()[:args.topfeatures]
+    fi.append(list(reversed(embedded_fi)))
+
+ale_rank = {}
+for i, features in enumerate(zip(*fi)):
+    for j, feature in enumerate(features):
+        if feature not in ale_rank:
+            ale_rank[feature] = [0] * len(features)
+        ale_rank[feature][j] = i
+for feature, ranks in ale_rank.items():
+    ale_rank[feature] = sum(ranks) / len(ranks)
+
+ale_feature_importance = sorted(ale_rank, key=ale_rank.get, reverse=True)[:args.topfeatures]
+#+end_src
+
+With DALEX the ALE for numerical and categorical features are computed separately.
+We will compute ALE only for the top features by [[SHAP feature importance][SHAP feature importance]].
+
+#+begin_src python
+numerical_features, categorical_features = ([], [])
+for f in ale_feature_importance:
+    if f in ['Sex (F=0;M=1)']:
+        categorical_features.append('Sex')
+    else:
+        numerical_features.append(f)
+#+end_src
+
+Compute ALE for each model fitted during [[Cross-validation][cross-validation]].
+
+#+begin_src python
+start = 0
+model_profiles_numerical, model_profiles_categorical = ([], [])
+for i in range(len(pipelines)):
+    explainer = dalex.Explainer(
+        pipeline,
+        X_cv[start:start+no_samples_cv[i]],
+        y_cv[start:start+no_samples_cv[i]],
+        verbose=False,
+        precalculate=False
+    )
+    start += no_samples_cv[i]
+    model_profile_numerical = explainer.model_profile(
+        type='accumulated',
+        random_state = utils.seed,
+        verbose=False,
+        variables=numerical_features,
+        variable_type='numerical'
+    )
+    model_profiles_numerical.append(model_profile_numerical.result)
+    if len(categorical_features):
+        model_profile_categorical = explainer.model_profile(
+            type='accumulated',
+            random_state=utils.seed,
+            verbose=False,
+            variables=categorical_features,
+            variable_type='categorical'
+        )
+        model_profiles_categorical.append(model_profile_categorical.result)
+#+end_src
+
+Concatenate the numerical model profiles results of each cross-validated model.
+The profile results are points =_x_= (feature value) and =_y_= (local effect) for a given feature =_vname_=.
+We want to create a synthetic profile that represents the average of all the computed profile.
+First, for each feature we sort the points by their feature value in ascending order.
+For every =avg_n= (number of splits used for cross-validation) point compute a synthetic point that averages =_x_= and =_y_=.
+This is done to smooth out the curve and clearly show the trend among the cross-validated models.
+
+#+begin_src python
+profiles_concat = pd.concat(model_profiles_numerical)
+profiles_avg = []
+for feature in numerical_features:
+    dataframe = profiles_concat[profiles_concat["_vname_"] == feature].sort_values(by='_x_')
+    points = dataframe[['_x_','_yhat_']].values.tolist()
+    avg_n = utils.cv.get_n_splits()
+    for i in range(0, len(points), avg_n):
+        avg_x = sum([point[0] for point in points[i:i+avg_n]])/avg_n
+        avg_y = sum([point[1] for point in points[i:i+avg_n]])/avg_n
+        profiles_avg.append([feature, "", avg_x, avg_y])
+
+model_profile_numerical = AggregatedProfiles()
+model_profile_numerical.result = pd.DataFrame(
+    data=profiles_avg,
+    columns=['_vname_','_label_','_x_','_yhat_'],
+)
+#+end_src
+
+Create the ALE plots for each numerical feature.
+
+#+begin_src python
+fig = model_profile_numerical.plot(
+    variables = numerical_features,
+    show = False,
+    facet_ncol = 2,
+    title = None,
+    horizontal_spacing = 0.05,
+    vertical_spacing = 0.1,
+    y_title = "ALE"
+)
+
+fig_wide = model_profile_numerical.plot(
+    variables = numerical_features,
+    show = False,
+    facet_ncol = 3,
+    title = None,
+    horizontal_spacing = 0.05,
+    vertical_spacing = 0.2,
+    y_title = "ALE",
+)
+#+end_src
+
+Concatenate the categorical model profiles results of each cross-validated model.
+The profile results are points =_x_= (feature category) and =_y_= (local effect) for a given feature =_vname_=.
+Again, we want to create a synthetic profile that represents the average of all the computed profile.
+The average =_yhat_= is computed for each feature category.
+This is going to be plotted in the same figure as the numerical features.
+In doing so we must use a numerical representation also for the categorical feature =Sex=.
+
+#+begin_src python
+if len(categorical_features):
+    categorical_profiles_concat = pd.concat(model_profiles_categorical)
+    categorical_profiles_avg = []
+    for feature in categorical_features:
+        dataframe = categorical_profiles_concat[categorical_profiles_concat["_vname_"] == feature]
+        categories = dataframe['_x_'].drop_duplicates()
+        for category in categories:
+            avg_y = dataframe[dataframe['_x_'] == category]['_yhat_'].mean()
+            if feature == 'Sex':
+                category = (0 if category == 'F' else 1)
+            categorical_profiles_avg.append([feature, "", category, avg_y])
+
+    model_profile_categorical = AggregatedProfiles()
+    model_profile_categorical.result = pd.DataFrame(
+        data=categorical_profiles_avg,
+        columns=['_vname_','_label_','_x_','_yhat_'],
+    ).sort_values(by=['_vname_', '_x_'])
+#+end_src
+
+We create a figure for the plot of the categorical feature, take the resulting trace and add it to the numerical features plots.
+Being unable to set a title for the =Sex= subplot, we set a label for each category bar.
+
+#+begin_src python
+    fig_cat = model_profile_categorical.plot(
+        variables=categorical_features,
+        show=False,
+        title=None,
+        center=False,
+        geom='bars'
+    )
+
+    bar = fig_cat.data[0]
+    bar.text=["Sex=F",'Sex=M']
+    bar.textposition="outside"
+    fig.add_trace(bar, row=1, col=2)
+    fig_wide.add_trace(bar, row=1, col=3)
+#+end_src
+
+Adjust the aspect of the figures.
+
+#+begin_src python
+font_size = 16
+for f in fig, fig_wide:
+    f.update_layout(
+        font={
+            'family': "DejaVu Sans",
+            'size': font_size,
+            'color': "Black"
+        },
+        margin=dict(l=30, r=30, t=30, b=30),
+    )
+    for i in f['layout']['annotations']:
+        i['font'] = dict(size=font_size)
+
+for i in fig['layout']['annotations']:
+    i['x'] = (-0.12 if i['text'] == 'ALE' else i['x'])
+    i['y'] = (i['y'] - 0.32 if i['text'] != 'ALE' else i['y'])
+
+for i in fig_wide['layout']['annotations']:
+    i['y'] = (i['y'] - 0.52 if i['text'] != 'ALE' else i['y'])
+
+fig_wide.update_layout(width=800, height=600)
+if len(categorical_features):
+    fig.update_xaxes(showticklabels=False, row=1, col=2)
+    fig_wide.update_xaxes(showticklabels=False, row=1, col=3)
+#+end_src
+
+Save the figures with all the feature plots.
+
+#+begin_src python
+fig.write_image(global_explanations['ale_plot']['output'])
+fig_wide.write_image(global_explanations['ale_plot_wide']['output'])
+#+end_src
+
+** Results
+:PROPERTIES:
+:header-args: :tangle .gitlab-ci.yml
+:END:
+
+#+begin_src yaml
+results:
+  extends: .experiment_rule
+  needs: [
+    "tangling",
+    "performance_metrics",
+    "confusion_matrices",
+    "confusion_matrices_roc",
+    "global_explanations",
+  ]
+  script: echo "Collecting results..."
+  artifacts:
+    paths:
+    - artifacts
+    expire_in: 3 mos
+#+end_src
+
+* Results fetching
+** =Dockerfile=
+:PROPERTIES:
+:header-args: :tangle results_fetching/Dockerfile :mkdirp yes
+:END:
+
+#+begin_src text
+FROM ubuntu:22.04
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y pip curl unzip && \
+    pip install requests==2.28.1
+#+end_src
+
+** =.gitlab-ci.yml=
+:PROPERTIES:
+:header-args: :tangle .gitlab-ci.yml
+:END:
+
+#+begin_src yaml
+build:results_fetching:
+  extends: [.build]
+  variables:
+    IMAGE_NAME: results_fetching
+    CONTEXT: ./results_fetching
+  needs: [tangling]
+
+results_fetching:
+  extends: [.1h_artifacts]
+  rules:
+    - if: $SKIP_EXPERIMENTS == "true"
+  image: $CI_REGISTRY_IMAGE/results_fetching:latest
+  needs:
+    - job: tangling
+    - job: build:results_fetching
+      optional: true
+  script: chmod +x ./results_fetching.sh && ./results_fetching.sh
+#+end_src
+
+** =results_fetching.sh=
+:PROPERTIES:
+:header-args: :tangle results_fetching.sh
+:END:
+
+#+begin_src sh
+ curl -o jobs.json --globoff \
+ --header "PRIVATE-TOKEN: $TOKEN" \
+ "https://gitlab.fbk.eu/api/v4/projects/$CI_PROJECT_ID/jobs?scope=success"
+
+ JOB_ID=$(python3 retrieve_job_id.py $CI_PROJECT_ID $TOKEN results)
+ echo "Job ID: ${JOB_ID}"
+
+ curl -o artifacts.zip \
+ --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+ "https://gitlab.fbk.eu/api/v4/projects/$CI_PROJECT_ID/jobs/$JOB_ID/artifacts"
+ unzip artifacts.zip
+#+end_src
+
+** =retrieve_job_id.py=
+
+#+begin_src python :tangle retrieve_job_id.py
+import sys
+import json
+
+import requests
+
+project_id = sys.argv[1]
+token = sys.argv[2]
+job_name = sys.argv[3]
+
+job_id = None
+page = 1
+while job_id is None and page < 11:
+    response = requests.get(
+        "https://gitlab.fbk.eu/api/v4/projects/%s/jobs" %project_id,
+        params={
+            'scope': 'success',
+            'per_page': 100,
+            'page': page
+        },
+        headers={'PRIVATE-TOKEN': token},
+    )
+    for job in response.json():
+        if job['name'] == job_name:
+            job_id = job['id']
+            break
+    page += 1
+print(job_id)
+#+end_src
+
+* Publishing
+** =init.el=
+:PROPERTIES:
+:header-args: :tangle publishing/init.el :mkdirp yes
+:END:
+
+Setup =packages= and =use-package=.
+Packages are installed in the =./packages= folder.
+Any missing package is downloaded from the listed package repositories.
+
+#+begin_src emacs-lisp
+(require 'package)
+(setq package-archives '(("org"  . "http://orgmode.org/elpa/")
+                         ("gnu"   . "http://elpa.gnu.org/packages/")
+                         ("melpa" . "http://melpa.org/packages/")))
+
+(setq path2packages (expand-file-name "packages" (file-name-directory load-file-name)))
+(add-to-list 'load-path path2packages)
+(setq package-user-dir path2packages)
+(package-initialize)
+
+(unless (package-installed-p 'use-package)
+  (package-refresh-contents)
+  (package-install 'use-package))
+(require 'use-package)
+(setq use-package-always-ensure t)
+#+end_src
+
+Use =citeproc= to enable CSL support.
+
+#+begin_src emacs-lisp
+(use-package citeproc)
+(require 'oc-csl)
+#+end_src
+
+Set the bibliography file.
+
+#+begin_src emacs-lisp
+(setq path2bib (list (expand-file-name "bibliography.bib" (file-name-directory load-file-name))))
+(setq org-cite-global-bibliography path2bib)
+#+end_src
+
+Set the citation processor and citation style.
+
+#+begin_src emacs-lisp
+(setq path2template (expand-file-name "." (file-name-directory load-file-name)))
+(setq org-cite-csl-styles-dir path2template)
+(setq org-cite-export-processors "csl ieee.csl")
+#+end_src
+
+#+begin_src emacs-lisp
+(require 'ox-latex)
+#+end_src
+
+The =minted= environment enables syntax highlighting.
+Use =minted= for listings.
+Include =minted= in the default package list.
+Change the compilation switches to accommodate for minted.
+
+#+begin_src emacs-lisp
+(setq org-latex-listings 'minted
+      org-latex-packages-alist '(("" "minted"))
+      org-latex-pdf-process
+      '("pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
+        "pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"))
+#+end_src
+
+Prevent source block lines to be too long.
+
+#+begin_src emacs-lisp
+(setq org-latex-minted-options '(("breaklines" "true")
+                                 ("breakanywhere" "true")))
+#+end_src
+
+Remove the intermediate TeX file when exporting to PDF
+
+#+begin_src emacs-lisp
+(add-to-list 'org-latex-logfiles-extensions "tex")
+#+end_src
+
+Add a custom LaTeX class.
+
+#+begin_src emacs-lisp
+(with-eval-after-load 'ox-latex
+  (add-to-list 'org-latex-classes
+             '("org-plain-latex"
+               "\\documentclass{article}
+           [NO-DEFAULT-PACKAGES]
+           [PACKAGES]
+           [EXTRA]"
+               ("\\section{%s}" . "\\section*{%s}")
+               ("\\subsection{%s}" . "\\subsection*{%s}")
+               ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+               ("\\paragraph{%s}" . "\\paragraph*{%s}")
+               ("\\subparagraph{%s}" . "\\subparagraph*{%s}"))))
+#+end_src
+
+Export =_= and =^= as they are.
+
+#+begin_src emacs-lisp
+(setq org-export-with-sub-superscripts nil)
+#+end_src
+
+Disable the export of some values.
+
+#+begin_src emacs-lisp
+(setq org-export-with-date nil)
+(setq org-export-with-author nil)
+(setq org-export-with-toc nil)
+(setq org-export-with-title nil)
+#+end_src
+
+Generate HTML pages with code blocks.
+
+#+begin_src emacs-lisp
+(use-package htmlize)
+#+end_src
+
+** with straight.el
+:PROPERTIES:
+:header-args: :tangle no
+:END:
+
+#+begin_src emacs-lisp
+;; Bootstrap straight.el
+(defvar bootstrap-version)
+(let ((bootstrap-file
+      (expand-file-name "straight/repos/straight.el/bootstrap.el" user-emacs-directory))
+      (bootstrap-version 5))
+  (unless (file-exists-p bootstrap-file)
+    (with-current-buffer
+        (url-retrieve-synchronously
+        "https://raw.githubusercontent.com/raxod502/straight.el/develop/install.el"
+        'silent 'inhibit-cookies)
+      (goto-char (point-max))
+      (eval-print-last-sexp)))
+  (load bootstrap-file nil 'nomessage))
+
+(straight-use-package 'org)
+
+(straight-use-package 'use-package)
+(setq straight-use-package-by-default t)
+
+(put 'narrow-to-region 'disabled nil)
+#+end_src
+
+Use =citeproc= to enable CSL support.
+
+#+begin_src emacs-lisp
+(use-package citeproc)
+(require 'oc-csl)
+#+end_src
+
+Set the bibliography file.
+
+#+begin_src emacs-lisp
+(setq path2bib (list (expand-file-name "bibliography.bib" (file-name-directory load-file-name))))
+(setq org-cite-global-bibliography path2bib)
+#+end_src
+
+Set the citation processor and citation style.
+
+#+begin_src emacs-lisp
+(setq path2template (expand-file-name "." (file-name-directory load-file-name)))
+(setq org-cite-csl-styles-dir path2template)
+(setq org-cite-export-processors "csl ieee.csl")
+#+end_src
+
+#+begin_src emacs-lisp
+(require 'ox-latex)
+#+end_src
+
+The =minted= environment enables syntax highlighting.
+Use =minted= for listings.
+Include =minted= in the default package list.
+Change the compilation switches to accommodate for minted.
+
+#+begin_src emacs-lisp
+(setq org-latex-listings 'minted
+      org-latex-packages-alist '(("" "minted"))
+      org-latex-pdf-process
+      '("pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"
+        "pdflatex -shell-escape -interaction nonstopmode -output-directory %o %f"))
+#+end_src
+
+Prevent source block lines to be too long.
+
+#+begin_src emacs-lisp
+(setq org-latex-minted-options '(("breaklines" "true")
+                                 ("breakanywhere" "true")))
+#+end_src
+
+Remove the intermediate TeX file when exporting to PDF
+
+#+begin_src emacs-lisp
+(add-to-list 'org-latex-logfiles-extensions "tex")
+#+end_src
+
+Add a custom LaTeX class.
+
+#+begin_src emacs-lisp
+(with-eval-after-load 'ox-latex
+  (add-to-list 'org-latex-classes
+             '("org-plain-latex"
+               "\\documentclass{article}
+           [NO-DEFAULT-PACKAGES]
+           [PACKAGES]
+           [EXTRA]"
+               ("\\section{%s}" . "\\section*{%s}")
+               ("\\subsection{%s}" . "\\subsection*{%s}")
+               ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+               ("\\paragraph{%s}" . "\\paragraph*{%s}")
+               ("\\subparagraph{%s}" . "\\subparagraph*{%s}"))))
+#+end_src
+
+Export =_= and =^= as they are.
+
+#+begin_src emacs-lisp
+(setq org-export-with-sub-superscripts nil)
+#+end_src
+
+Disable the export of some values.
+
+#+begin_src emacs-lisp
+(setq org-export-with-date nil)
+(setq org-export-with-author nil)
+(setq org-export-with-toc nil)
+(setq org-export-with-title nil)
+#+end_src
+
+** =Dockerfile=
+:PROPERTIES:
+:header-args: :tangle publishing/Dockerfile :mkdirp yes
+:END:
+
+Temporarily disable the configuration prompts while building.
+Install the TeX packages and Emacs packages required to export the =.org= files to LaTeX pdfs.
+Install =pandoc= and =python3=
+
+#+begin_src text
+FROM gitlab-registry.fbk.eu/vosmani/eros_zaupa/emacs
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    texlive-latex-base \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    texlive-latex-extra \
+    texlive-science \
+    python3-pygments \
+    pandoc \
+    python3 \
+    python3-pip
+COPY init.el packages /root/.emacs.d/
+RUN emacs --batch -l /root/.emacs.d/init.el && \
+    pip install \
+        pandas==1.5.0 \
+        jinja2==3.1.2 \
+        matplotlib==3.5.1 \
+        numpy==1.23.0
+#+end_src
+
+** =.gitlab-ci.yml=
+:PROPERTIES:
+:header-args: :tangle .gitlab-ci.yml
+:END:
+
+#+begin_src yaml
+build:publishing:
+  extends: .build
+  variables:
+    IMAGE_NAME: publishing
+    CONTEXT: ./publishing
+  needs:
+    - job: tangling
+    - job: build:emacs
+      optional: true
+
+publishing:
+  extends: .1h_artifacts
+  image: $CI_REGISTRY_IMAGE/publishing:latest
+  needs:
+    - job: tangling
+    - job: results
+      optional: true
+    - job: results_fetching
+      optional: true
+    - job: build:publishing
+      optional: true
+  script:
+    - |
+      chmod +x ./performance_metrics_content.sh && ./performance_metrics_content.sh || exit 1
+      chmod +x ./feature_importance_content.sh && ./feature_importance_content.sh || exit 1
+      chmod +x ./publishing.sh && ./publishing.sh || exit 1
+  artifacts:
+    paths:
+    - artifacts
+    expire_in: 3 mos
+#+end_src
+
+The ~pages~ job allows to deploy a static website from the ~public~ folder (see [[https://docs.gitlab.com/ee/user/project/pages/][GitLab Pages]]).
+Publish the documentation page =xai_experiments.html=, the thesis and the slides.
+
+#+begin_src yaml
+pages:
+  needs: [publishing]
+  script:
+    - |
+      mkdir -p ./public && mv ./artifacts/xai_experiments.html ./public/index.html
+      mv ./artifacts/thesis.pdf ./artifacts/slides.pdf ./public
+  artifacts:
+    paths:
+    - public
+#+end_src
+
+** =performance_metrics_content.sh=
+:PROPERTIES:
+:header-args: :tangle performance_metrics_content.sh
+:END:
+
+Generate the tables related to the performance metrics.
+
+#+begin_src sh
+for model in $MODELS;do
+    count=0
+    for complication in $COMPLICATIONS;do
+        csv[$count]=./artifacts/$complication/$model/performance_metrics.csv
+	count=$((count+1))
+    done
+    python3 performance_metrics_content.py \
+        --complication $COMPLICATIONS \
+        --input ${csv[@]} \
+        --output ./artifacts/${model}_performance_metrics.tex || exit 1
+done
+#+end_src
+
+** =performance_metrics_content.py=
+:PROPERTIES:
+:header-args: :tangle performance_metrics_content.py
+:END:
+
+#+begin_src python
+import argparse
+import csv
+
+import pandas as pd
+
+cli_parser = argparse.ArgumentParser()
+cli_parser.add_argument('--complication', nargs='+')
+cli_parser.add_argument('--input', nargs='+')
+cli_parser.add_argument('--output', nargs='+')
+args = cli_parser.parse_args()
+
+metrics = ["MCC",  "AUC",  "ACC", "PPV", "NPV", "TPR", "TNR", "F1"]
+
+performance = {}
+for i in range(len(args.complication)):
+    with open(args.input[i], mode='r') as file:
+        csv_reader = csv.reader(file)
+        header = next(csv_reader)
+        scores = [(row[1], row[2]) for row in csv_reader]
+    performance[args.complication[i]] = {
+        'test': [score[0] for score in scores],
+        'cv': [score[1] for score in scores],
+    }
+    
+latex_rows = []
+for set_type in ['test', 'cv']:
+    for i in range(len(metrics)):
+        row = []
+        for complication in args.complication:
+            score = performance[complication][set_type][i]
+            if ';' in score:
+                score = score.replace("[", "\\\\ $ \\left[")
+                score = score.replace("]", "\\right] $")
+                score = "\\makecell{%s}" %score
+            row.append(score)
+        latex_rows.append(row) 
+
+iidx = pd.MultiIndex.from_arrays([
+    ["Test set" for i in range(len(metrics))] +
+    ["Fitting set in CV [95\% CI] \qquad \qquad" for i in range(len(metrics))],
+    metrics + metrics
+])
+
+styler = pd.DataFrame(latex_rows, columns=args.complication, index=iidx).style
+styler.applymap_index(
+    lambda v: "rotatebox:{90}--rwrap--latex;", level=0, axis=0
+)
+
+latex_table = styler.to_latex(
+    column_format="cc|%s" %('c' * len(args.complication)),
+    clines="skip-last;data",
+    convert_css=True,
+    position_float="centering",
+    multicol_align="|c|",
+    hrules=True,
+)
+
+latex_table = latex_table.replace("\\begin{table}", "\\begin{table}\n\\small")
+latex_table = latex_table.replace(
+    "\midrule",
+    "\midrule\n\cline{1-%i}" %(2 + len(args.complication))
+)
+
+with open(args.output[0], mode='w') as file:
+    file.write(latex_table)
+#+end_src
+
+** =feature_importance_content.sh=
+:PROPERTIES:
+:header-args: :tangle feature_importance_content.sh
+:END:
+
+Generate the tables and plot related to feature importance.
+
+#+begin_src sh
+feature_importance_files=(
+    f_test.csv
+    mutual_information.csv
+    RF/embedded_feature_importance.csv
+    HGBC+RUS/permutation_feature_importance.csv
+    RF/permutation_feature_importance.csv
+    HGBC+RUS/SHAP/feature_importance.csv
+    RF/SHAP/feature_importance.csv
+)
+
+i=0
+for complication in $COMPLICATIONS;do
+    for file in ${feature_importance_files[@]};do
+        input[$i]=./artifacts/$complication/$file
+        i=$((i+1))
+    done
+done
+
+output=(
+    ./artifacts/feature_importance.tex
+    ./artifacts/feature_importance_avg.tex
+    ./artifacts/feature_importance_frequency.pdf
+)
+
+python3 feature_importance_content.py \
+       --complication $COMPLICATIONS \
+       --input ${input[@]} \
+       --output ${output[@]}
+
+for file in ${output[@]};do test -f $file || exit 1;done
+#+end_src
+
+Move the bibliography file and the Citation Style Language (CSL) file to ~.emacs.d~.
+
+#+begin_src sh
+cp ./bibliography.bib ./template/ieee.csl $HOME/.emacs.d
+#+end_src
+
+** =feature_importance_content.py=
+:PROPERTIES:
+:header-args: :tangle feature_importance_content.py
+:END:
+
+#+begin_src python
+import argparse
+import csv
+from collections import Counter
+
+import pandas as pd
+import jinja2
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.ticker import MaxNLocator
+
+cli_parser = argparse.ArgumentParser()
+cli_parser.add_argument('--complication', nargs='+')
+cli_parser.add_argument('--input', nargs='+')
+cli_parser.add_argument('--output', nargs='+')
+args = cli_parser.parse_args()
+#+end_src
+
+The feature importance of each complication is described by =no_files= files.
+Arrange the feature importance on a list of =no_files * no_features= lists.
+Each list contains one feature for each complication.
+
+#+begin_src python
+no_files = 7
+column = 0
+feature_importance = []
+for i in range(0, len(args.input), no_files):
+    row = []
+    for csv_file in args.input[i:i+no_files]:
+        with open(csv_file, mode='r') as file:
+            csv_reader = csv.reader(file)
+            row.append([line[0] for line in csv_reader])
+    feature_importance.append(sum(row, []))
+#+end_src
+
+Compute the average rank for each set of methods.
+
+#+begin_src python
+def avg_rank(fi):
+    rank = {}
+    for i, features in enumerate(zip(*fi)):
+        for j, feature in enumerate(features):
+            if feature not in rank:
+                rank[feature] = [0] * len(features)
+            rank[feature][j] = i
+    for feature, ranks in rank.items():
+        rank[feature] = sum(ranks) / len(ranks)
+    return sorted(rank, key=rank.get, reverse=True)[:6]
+
+def aggregate_fi(fi):
+    split_fi = [list(reversed(fi[i:i+6])) for i in range(0, len(fi), 6)]
+    all_fi = avg_rank(split_fi)
+    models_fi = avg_rank(split_fi[2:])
+    hgbc_fi = avg_rank([split_fi[3], split_fi[5]])
+    rf_fi = avg_rank([split_fi[2], split_fi[4], split_fi[6]])
+    avg_fi = [all_fi, models_fi, hgbc_fi, rf_fi]
+    return [elem for sublist in avg_fi for elem in sublist]
+
+feature_avg = [aggregate_fi(pathology_fi) for pathology_fi in feature_importance]
+#+end_src
+
+#+begin_src python :tangle no
+def ordered_feature_list(feature_importance):
+    counts = Counter(feature_importance)
+    return list(dict.fromkeys(sorted(feature_importance, key=lambda x: (counts[x], x), reverse=True)))
+
+feature_avg = []
+feature_frequency = []
+for pathology_fi in feature_importance:
+    feature_frequency.append(Counter(pathology_fi))
+    avg_all_ranks = ordered_feature_list(pathology_fi)
+    avg_models_ranks = ordered_feature_list(pathology_fi[12:])
+    avg_hgbc_ranks = ordered_feature_list(pathology_fi[18:24] + pathology_fi[30:36])
+    avg_rf_ranks = ordered_feature_list(pathology_fi[12:18] + pathology_fi[24:30] + pathology_fi[36:42])
+    avg_ranks = avg_all_ranks[:6] + avg_models_ranks[:6] + avg_hgbc_ranks[:6] + avg_rf_ranks[:6]
+    feature_avg.append(avg_ranks)
+#+end_src
+
+=iidx_methods= and =iidx_avg= describe the tables indices.
+
+#+begin_src python
+iidx_methods = pd.MultiIndex.from_arrays([
+    ["Univariate statistical tests" for i in range(12)] +
+    ["Embedded" for i in range(6)] +
+    ["Permutation" for i in range(12)] +
+    ["SHAP" for i in range(12)],
+
+    ["F-value" for i in range(6)] +
+    ["MI" for i in range(6)] +
+    ["RF" for i in range(6)] +
+    ["HGBC+RUS" for i in range(6)] +
+    ["RF" for i in range(6)] +
+    ["HGBC+RUS" for i in range(6)] +
+    ["RF" for i in range(6)],
+
+    [i+1 for i in range(6) for j in range(7)]
+])
+
+iidx_avg = pd.MultiIndex.from_arrays([
+    ["Average feature ranking" for i in range(24)],
+
+    ["All" for i in range(6)] +
+    ["Models" for i in range(6)] +
+    ["HGBC+RUS" for i in range(6)] +
+    ["RF" for i in range(6)],
+
+    [i+1 for i in range(6) for j in range(4)]
+])
+
+tables = [
+    (iidx_methods, feature_importance, args.output[0]),
+    (iidx_avg, feature_avg, args.output[1])
+]
+#+end_src
+
+#+begin_src python
+for iidx, table_content, output in tables:
+#+end_src
+
+Flip table content.
+
+#+begin_src python
+    table_content = list(map(list, zip(*table_content)))
+#+end_src
+
+Reduce the lenght and the size of the features names.
+
+#+begin_src python
+    for i in range(len(table_content)):
+        for j in range(len(table_content[i])):
+            feature = table_content[i][j].split('(')[0].strip()
+            table_content[i][j] =  '\\scriptsize{%s}' %feature
+
+    styler = pd.DataFrame(table_content, columns=args.complication, index=iidx).style
+#+end_src
+
+Write the indices vertically.
+
+#+begin_src python
+    styler.applymap_index(
+        lambda v: "rotatebox:{90}--rwrap--latex;", level=0, axis=0
+    )
+    styler.applymap_index(
+        lambda v: "rotatebox:{90}--rwrap--latex;", level=1, axis=0
+    )
+    styler.hide(level=2, axis=0)
+#+end_src
+
+Get the LaTeX code for the described table.
+
+#+begin_src python
+    latex_table = styler.to_latex(
+        column_format="cc|%s" %('c' * len(args.complication)),
+        clines="skip-last;data",
+        convert_css=True,
+        position_float="centering",
+        multicol_align="|c|",
+        hrules=True,
+    )
+#+end_src
+
+Change the font size of the table content.
+
+#+begin_src python
+    latex_table = latex_table.replace("\\begin{table}", "\\begin{table}\n\\scriptsize")
+#+end_src
+
+Add a line between the table header and the content.
+
+#+begin_src python
+    latex_table = latex_table.replace(
+        "\midrule",
+        "\midrule\n\cline{1-%i}" %(2 + len(args.complication))
+    )
+#+end_src
+
+Save the LaTeX table.
+
+#+begin_src python
+    with open(output, mode='w') as file:
+        file.write(latex_table)
+#+end_src
+
+Order the features by frequency.
+
+#+begin_src python
+feature_frequency = [Counter(pathology_fi) for pathology_fi in feature_importance]
+total_feature_frequency = Counter()
+for feature in feature_frequency:
+    total_feature_frequency += feature
+features_x = [feature for feature, _ in total_feature_frequency.most_common()]
+features_x.reverse()
+#+end_src
+
+#+begin_src python
+bars_dict = {}
+for i in range(len(args.complication)):
+    bars_dict[args.complication[i]] = [feature_frequency[i][feature] for feature in features_x]
+
+df = pd.DataFrame(
+    bars_dict,
+    index=[feature.split('(')[0].strip() for feature in features_x]
+)
+
+ax = df.plot.barh(
+    xlabel='Frequency',
+    stacked=True
+)
+ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+plt.savefig(args.output[2], format='pdf', dpi=320, bbox_inches='tight')
+plt.close()
+#+end_src
+
+** =publishing.sh=
+:PROPERTIES:
+:header-args: :tangle publishing.sh
+:END:
+
+Export the thesis and slides to LaTeX as PDF files and move them to the ~artifacts~ folder.
+
+#+begin_src sh
+for org in thesis.org slides.org;do
+    canonical_path=$(readlink -f ${org})
+    emacs $canonical_path --batch -l $HOME/.emacs.d/init.el -f org-latex-export-to-pdf
+    mv ${canonical_path%.org}.pdf artifacts
+done
+#+end_src
+
+Export ~xai_experiments.org~ to HTML and move it to the ~artifacts~ folder.
+
+#+begin_src sh
+emacs $(readlink -f xai_experiments.org) --batch -l $HOME/.emacs.d/init.el -f org-html-export-to-html
+mv ./xai_experiments.html artifacts
+#+end_src
+
+* Utils
+:PROPERTIES:
+:header-args: :tangle utils.py
+:END:
+
+#+begin_src python
+import argparse
+import csv
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import RepeatedStratifiedKFold, cross_validate
+
+seed = 42
+
+cv = RepeatedStratifiedKFold(
+    n_splits=5,
+    n_repeats=10,
+    random_state=seed
+)
+
+cli_parser = argparse.ArgumentParser()
+cli_parser.add_argument('--topfeatures', default=6)
+cli_parser.add_argument('--dataset', default='./data/dataset.csv')
+cli_parser.add_argument('--complication', nargs='+')
+cli_parser.add_argument('--model', nargs='+')
+cli_parser.add_argument('--input', nargs='+')
+cli_parser.add_argument('--output', nargs='+')
+#+end_src
+
+** =datasets(dataset, comorbidity, seed)=
+
+#+begin_src python
+def datasets(dataset, comorbidity):
+#+end_src
+
+Load the /“Complete Data”/ dataset.
+
+#+begin_src python
+    data = pd.read_csv(dataset)
+#+end_src
+
+Load the demographic, lab and comorbidity features and rename the data columns.
+
+#+begin_src python
+    with open("./data/demographic_lab_features_list.org") as org_file:
+        lines = org_file.readlines()
+        demographic_lab_features = [line.split("::")[0].strip("-").strip() for line in lines]
+
+    comorbidities_features = pd.read_csv("./data/comorbidities_features_table.csv")
+    comorbidity_cols = list(comorbidities_features['Name'])
+    data.columns = demographic_lab_features + comorbidity_cols
+#+end_src
+
+Drop columns
+- With “%” :: They are highly correlated to their numerical counterpart.
+- “Creatinine” :: Creatinine is one of the diagnostic criteria for kidney disease, strongly correlated to renal complications. It is discarded when the complication of interest is NEF.
+
+#+begin_src python
+    drop_cols = [
+        'Basophils (%)',
+        'Eosinophils (%)',
+        'Lymphocytes (%)',
+        'Monocytes (%)',
+        'Neutrophils (%)',
+        'Glic.Hemo. (%)'
+    ]
+    if comorbidity == "NEF":
+        drop_cols.append("Creatinine (mg/dL)")
+    data = data.drop(columns=drop_cols)
+#+end_src
+
+Use a time-split approach to define the training set and the test set.
+
+#+begin_src python
+    data["Exam date"] = pd.to_datetime(data["Exam date"])
+    data = data.sort_values(by="Exam date")
+    train_set, test_set = train_test_split(data, test_size=0.2, random_state=seed, shuffle=False)
+#+end_src
+
+Get the the column name for the comorbidity of interest.
+
+#+begin_src python
+    comorbidity_col = comorbidities_features[comorbidities_features['Identifier'] == comorbidity]['Name']
+#+end_src
+
+For both training and test set, drop the comorbidity columns and set a separate frame for the comorbidity of interest.
+
+#+begin_src python
+    drop_cols = comorbidity_cols + ["Patient code", "Exam date"]
+    X_train = train_set.drop(columns=drop_cols)
+    X_test = test_set.drop(columns=drop_cols)
+    y_train = train_set[comorbidity_col]
+    y_test = test_set[comorbidity_col]
+#+end_src
+
+Return the training and testing set with their labels.
+
+#+begin_src python
+    return X_train, y_train.values.ravel(), X_test, y_test.values.ravel()
+#+end_src
+
+** =preprocessor(features)=
+
+#+begin_src python
+def preprocessor(features):
+    features_num = [feature for feature in features if feature != 'Sex']
+    return ColumnTransformer(
+        transformers=[
+            ("cat", Pipeline([('ohe', OneHotEncoder(drop='if_binary'))]), ['Sex']),
+            ("num", Pipeline([('std_scaler', StandardScaler()),]), features_num),
+        ],
+        verbose_feature_names_out=False
+    )
+#+end_src
+
+** =read_hyperparameters(complication, file)=
+
+A function that, given a complication and a model, returns a dictionary of the hyperparameters of the model for that complication.
+
+#+begin_src python
+def read_hyperparameters(complication, model):
+    hyperparameters = {}
+    with open("./data/%s_hyperparameters_table.csv" %model) as csv_file:
+        csv_reader = csv.reader(csv_file)
+        header = next(csv_reader)
+        table = [row for row in csv_reader]
+        for row in table:
+            value = row[header.index(complication)]
+            if value == 'None':
+                value = None
+            else:
+                try:
+                    value = int(value)
+                except:
+                    try:
+                        value = float(value)
+                    except:
+                        value = value.replace("'","")
+            hyperparameters[row[0]] = value
+    return hyperparameters
+#+end_src
+
+** =pipeline(complication, model, features)=
+
+#+begin_src python
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from imblearn.pipeline import Pipeline as imbPipe
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+
+def pipeline(complication, model, features):
+    p = read_hyperparameters(complication, model)
+    steps=[
+        ('preprocessor', preprocessor(features)),
+        ('over', SMOTE(random_state=seed, sampling_strategy=p["sampling_strategy"]))
+    ]
+    if model == "HGBC+RUS":
+        classifier = HistGradientBoostingClassifier(
+            random_state=seed,
+            learning_rate=p["learning_rate"],
+            max_iter=p["max_iter"],
+            max_depth=p["max_depth"],
+            max_leaf_nodes=p["max_leaf_nodes"],
+            validation_fraction=p["validation_fraction"],
+            n_iter_no_change=p["n_iter_no_change"],
+            tol=p["tol"]
+        )
+        steps.append(('under', RandomUnderSampler(random_state=seed)))
+    else:
+        if model == "RF":
+            classifier = RandomForestClassifier(
+                random_state=seed,
+                class_weight=p["class_weight"],
+                max_depth=p["max_depth"],
+                max_features=p["max_features"],
+                n_estimators=p["n_estimators"],
+	    )
+        elif model == "LR":
+            classifier = LogisticRegression(
+                random_state=seed,
+                C=p["C"],
+                class_weight=p["class_weight"],
+                penalty=p["penalty"],
+                solver=p["solver"],
+                max_iter=3000
+            )
+        else:
+            raise ValueError('Model not supported')
+    steps.append(('classifier', classifier))
+    return imbPipe(steps)
+#+end_src
+
+* References
+
+- [[https://jonathanabennett.github.io/blog/2019/05/29/writing-academic-papers-with-org-mode/][Writing Academic Papers with Org-mode]]
+- [[https://filip5114.github.io/Gitlab-CI-build-docker-image/][GitLab CI Pipeline. Build docker image in pipeline job.]]
+- [[https://www.vipinajayakumar.com/continuous-integration-of-latex-projects-with-gitlab-pages.html#find-the-url-to-the-pdf-output][Continuous Integration of LaTeX projects with GitLab Pages]]
+- [[https://www.reddit.com/r/emacs/comments/g9x9y8/automatically_export_publish_org_file_with_gitlab/][Automatically export & publish Org file with Gitlab]]
+- [[https://github.com/doc-org][org-mode + latex + docker = pdf]]
+- [[https://github.com/novoid/orgmode-iKNOW2012][Reproducible Research with Emacs Org-mode]]
+- [[http://howardism.org/Technical/Emacs/literate-programming-tutorial.html][Introduction to Literate Programming]]

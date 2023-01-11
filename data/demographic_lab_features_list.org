@@ -1,0 +1,31 @@
+- Patient code ::  A numeric ID assigned to each patient.
+- Exam date :: The date on which the examination took place.
+- Sex :: A 2-level categorical variable indicating the biological sex of the patient.
+- Age :: The age of the patient at the time of the examination.
+- Basophils (%) :: A type of White Blood Cells (WBCs) that is strictly related to severe allergic reactions.
+- Eosinophils (%) :: A type of WBCs involved in fighting parasitic infections and in controlling mechanisms associated with allergy and asthma along with basophils.
+- Lymphocytes (%) :: Another component of the WBCs that produce antibodies, kill cancer cells and control the immune response to foreign substances.
+- Monocytes (%) :: The largest of the WBCs that compose 2% to 10% of all leukocytes in the human body. They can be used to kill micro-organisms and remove dead cells or to boost the immunity process.
+- Neutrophils (%) :: A type of WBCs that defend against bacterial or fungal infection.
+- Basophils (cells/nL) :: As above, but expressed as a count instead of a percentage
+- Eosinophils (cells/nL) :: As above, but expressed as a count instead of a percentage.
+- Lymphocytes (cells/nL) :: As above, but expressed as a count instead of a percentage.
+- Monocytes (cells/nL) :: As above, but expressed as a count instead of a percentage.
+- Neutrophils (cells/nL) :: As above, but expressed as a count instead of a percentage.
+- HDL cholesterol (mg/dL) :: High-density lipoprotein, known as the “good” cholesterol because it protects against heart attack and stroke.
+- LDL cholesterol (mg/dL) :: Low-density lipoprotein, also called "bad" cholesterol because high levels of LDL lead to the buildup of plaques that narrow the arteries (atherosclerosis) increasing the risk for heart attack, stroke and peripheral artery disease (PAD).
+- Total cholesterol (mg/dL) :: Total cholesterol (LDL, HDL, VLDL) levels.
+- Creatinine (mg/dL) :: A chemical compound of muscles metabolism.
+- Hematocrit (%) :: The volume percentage of Red Blood Cells (RBCs) in the blood.
+- Hemoglobin (g/100ml) :: The molecule in RBCs that carries oxygen from the lungs to the body’s tissues and returns carbon dioxide from the tissues back to the lungs.
+- Erythrocytes (million cells/µL) :: Or RBCs, the most common type of blood cell whose function is to deliver oxygen to the body tissues via blood flow through the circulatory system.
+- Glycemia (mg/dL) :: The concentration of sugar or glucose in the blood. Glycemia level is one of the diagnostic criteria for diabetes.
+- Glic.Hemo. (%) :: Glycated Hemoglobin, a molecule of glucose and hemoglobin bound together. Measurement provides an overall picture of what the average blood sugar levels have been over a period of weeks/months.
+- Glic.Hemo. (mmol/mol) :: As above, but expressed as mmol/mol instead of a percentage.
+- Leukocytes (cells/nL) :: Or WBCs, cells of the immune system that are involved in protecting the body against infections and other diseases.
+- MCH (pg/cell) :: Mean Corpuscular Hemoglobin, the average mass of hemoglobin per RBCs in a sample of blood.
+- MCHC (g/dL) :: Mean Corpuscular Hemoglobin Concentration, the hemoglobin concentration in a given volume of packed red blood cell (blood without plasma).
+- MCV (fL) :: Mean Corpuscular Volume, the average volume of an RBC.
+- Platelets (cells/nL) :: Small cell fragments, also known as thrombocytes, that form clots and stop or prevent bleeding.
+- RDW (%) :: Red Blood Cell Distribution Width, the range of variation of RBCs volume and size.
+- Triglycerides (mg/dL) :: The main constituents of body fat in humans, which are built from non-needed calories.
